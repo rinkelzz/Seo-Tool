@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.cover
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project artifacts
+/data/
+/storage/
+*.sqlite3
+*.db
+*.db-journal
+tmp_init.db*
+
+# Frontend
+/web/node_modules/
+/web/.next/
+/web/out/
+
+# Docker
+.docker-volumes/
+
+# Persoenliche Vorlagen / Exports (nicht committen)
+*venture-full-export.pdf
+/uploads/
