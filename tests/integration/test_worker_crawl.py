@@ -1,0 +1,153 @@
+"""End-to-end test of the crawl worker job: HTTP → DB.
+
+Mocks the network with ``respx`` and uses the in-memory SQLite session from
+``conftest``. The job runs synchronously inside the test process (no Redis).
+"""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import httpx
+import pytest
+import respx
+
+from backend.app.models.crawl import Crawl, CrawlStatus
+from backend.app.models.image import Image
+from backend.app.models.issue import Issue
+from backend.app.models.link import Link
+from backend.app.models.page import Page
+from backend.app.models.project import Project
+from worker.jobs.crawl import run_crawl_job
+
+
+def _html(title: str, body: str = "<p>x</p>", with_alt: bool = True) -> str:
+    img = '<img src="/x.png" alt="x">' if with_alt else '<img src="/x.png">'
+    return (
+        f'<html lang="de"><head><title>{title}</title>'
+        f'<meta name="description" content="A meta description that is sufficiently long to satisfy the heuristic threshold for descriptions.">'
+        f"</head><body><h1>Heading</h1>{img}{body}</body></html>"
+    )
+
+
+@respx.mock
+def test_full_crawl_persists_pages_findings_and_scores(db_session, engine) -> None:
+    # Arrange a tiny site
+    respx.get("https://demo.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html(
+                "Startseite — eine ausreichend lange Überschrift",
+                body='<a href="/about">About</a>',
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+    respx.get("https://demo.test/about").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html(
+                "Über uns — eine ausreichend lange Überschrift hier auch",
+                with_alt=False,  # missing alt should produce a finding
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+
+    project = Project(
+        name="Demo",
+        domain="demo.test",
+        base_url="https://demo.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+
+    # Patch the worker's session factory to reuse the test in-memory engine.
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after is not None
+    assert crawl_after.status == CrawlStatus.COMPLETED
+    assert crawl_after.pages_crawled == 2
+    assert crawl_after.score_tech is not None
+    assert crawl_after.score_overall is not None
+    assert crawl_after.started_at is not None
+    assert crawl_after.finished_at is not None
+
+    pages = db_session.query(Page).filter(Page.crawl_id == crawl_id).all()
+    assert len(pages) == 2
+    assert {p.url for p in pages} == {"https://demo.test/", "https://demo.test/about"}
+    for p in pages:
+        assert p.title is not None
+        assert p.h1 == "Heading"
+        assert p.language == "de"
+        assert p.status_code == 200
+        assert p.is_indexable is True
+
+    images = db_session.query(Image).all()
+    assert len(images) == 2  # one per page
+    assert any(not img.has_alt for img in images)
+
+    links = db_session.query(Link).filter(Link.crawl_id == crawl_id).all()
+    # exactly one internal link (the /about link from /); no external links present
+    assert len(links) == 1
+    assert links[0].is_internal is True
+
+    issues = db_session.query(Issue).filter(Issue.crawl_id == crawl_id).all()
+    assert len(issues) > 0
+    rule_ids = {i.rule_id for i in issues}
+    assert "content.image.alt_missing" in rule_ids
+
+
+@respx.mock
+def test_crawl_failure_marks_status(db_session, engine) -> None:
+    # Project base_url that the engine rejects (no scheme) — triggers ValueError.
+    project = Project(
+        name="Bad",
+        domain="bad.test",
+        base_url="not-a-url",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after.status == CrawlStatus.FAILED
+    assert crawl_after.error_message is not None
+
+
+def test_run_crawl_alias_points_to_job() -> None:
+    """The API enqueues ``worker.jobs.crawl.run_crawl`` — make sure the alias still resolves."""
+    from worker.jobs import crawl as crawl_module
+
+    assert crawl_module.run_crawl is crawl_module.run_crawl_job
+
+
+@pytest.fixture(autouse=True)
+def _no_real_dns(monkeypatch):  # type: ignore[no-untyped-def]
+    """Prevent any test from accidentally touching the real network via httpx."""
+    yield

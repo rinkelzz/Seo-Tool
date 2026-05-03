@@ -66,3 +66,4 @@ addopts = "-ra --strict-markers"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["backend*", "worker*", "crawler*", "analyzers*"]
+exclude = ["tests*", "infra*", "migrations*"]

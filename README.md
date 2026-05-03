@@ -6,9 +6,11 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 0 (Grundgerüst) abgeschlossen** — Repo-Struktur, Docker-Setup, Datenbank-Schema (11 Tabellen + Alembic), FastAPI mit Project-CRUD und Crawl-Trigger, RQ-Worker mit Crawl-Job-Stub, 10 grüne Tests, ruff + black sauber.
+**Phase 1 (Crawler + Tech/Meta-Modul) — Teil A abgeschlossen.** Async-Crawler (`httpx` + `selectolax`) mit BFS, Concurrency-Limit, robots.txt-Respect, Sitemap- und Resource-Crawl noch nicht enthalten. Tech/Meta-Analyzer mit 22 Regeln (Title, Meta-Description, H1, Alt-Texte, Antwortzeit, Sprache, URL-Hygiene, HTTP-Fehler, noindex, HTML-Größe, Duplicate-Detection für Title/Description). Score-Berechnung pro Kategorie + Overall. Worker-Job persistiert Pages, Images, Links, Issues und Scores in einer Transaktion. **84 grüne Tests**, ruff + black sauber.
 
-Nächster Schritt: **Phase 1 (Crawler + Tech/Meta-Modul)**.
+Noch offen in Phase 1 (Teil B): Sitemap-Discovery, Ressourcen-Crawl (CSS/JS), Web-UI für Issue-Drilldown.
+
+Nächster Schritt: entweder Phase 1-B oder direkt **Phase 2 (Strukturmodul)** — Link-Graph, Klicktiefe, Linktext-Analyse, Redirect-Ketten.
 
 ## Schnellstart
 
@@ -59,7 +61,7 @@ mypy backend worker crawler analyzers
 ## Phasen (Kurzfassung aus PLAN.md)
 
 - [x] Phase 0 — Grundgerüst
-- [ ] Phase 1 — Crawler + Tech/Meta-Modul (MVP)
+- [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B (Sitemap/Resources/UI) offen
 - [ ] Phase 2 — Struktur-Modul
 - [ ] Phase 3 — Content-Modul
 - [ ] Phase 4 — Keyword-Tracking via Google Search Console
