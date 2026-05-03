@@ -43,7 +43,7 @@ services:
       CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:-SeoToolBot/0.1}
       CRAWLER_MAX_CONCURRENCY: ${CRAWLER_MAX_CONCURRENCY:-8}
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_PORT:-8080}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +70,26 @@ services:
       backend:
         condition: service_started
     command: python -m worker.main
+    restart: unless-stopped
+
+  web:
+    # Frontend (Next.js). Built on the LXC from ../web at deploy time.
+    # Long-term we should build it in GH Actions and push as a separate
+    # GHCR image, then switch this to image: ghcr.io/.../seo-tool-web.
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      # Frontend talks to the backend over the internal Docker network.
+      API_URL: http://backend:8000
+      # Same APP_API_TOKEN as backend - frontend forwards it server-side,
+      # never exposes it to the browser.
+      API_TOKEN: ${APP_API_TOKEN}
+      NODE_ENV: production
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - backend
     restart: unless-stopped
 
 volumes:
