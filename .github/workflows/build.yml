@@ -10,7 +10,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   test:
@@ -45,7 +44,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
+      - name: Lowercase image name
+        id: lower
+        run: echo "image=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -57,7 +58,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ steps.lower.outputs.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
