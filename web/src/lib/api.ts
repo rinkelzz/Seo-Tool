@@ -7,6 +7,8 @@
 
 import "server-only";
 
+import { unstable_noStore as noStore } from "next/cache";
+
 import type {
   Crawl,
   CrawlSummary,
@@ -47,6 +49,15 @@ async function request<T>(
   init: RequestInit = {},
   query?: Record<string, string | number | boolean | undefined>,
 ): Promise<T> {
+  // Mark the calling RSC as dynamic — must run BEFORE apiToken() can throw,
+  // otherwise Next.js will static-render the page during `next build`, the
+  // missing-token error gets caught by the page's try/catch, and the
+  // resulting "Backend nicht erreichbar" HTML is baked into the bundle.
+  // Runtime env vars then have no effect. ``cache: "no-store"`` on the
+  // fetch below isn't sufficient on its own because the fetch never runs
+  // when an earlier statement throws.
+  noStore();
+
   const url = new URL(path, apiUrl());
   if (query) {
     for (const [k, v] of Object.entries(query)) {
