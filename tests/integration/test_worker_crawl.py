@@ -19,6 +19,7 @@ from backend.app.models.issue import Issue
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.sitemap import Sitemap
 from worker.jobs.crawl import run_crawl_job
 
 
@@ -255,6 +256,134 @@ def test_content_blocks_persisted_and_score_set(db_session, engine) -> None:
         assert len(block.block_hash) == 64  # SHA-256 hex
         assert block.word_count >= 5
         assert block.text_excerpt.strip() == block.text_excerpt
+
+
+@respx.mock
+def test_sitemap_persisted_and_diff_findings_emitted(db_session, engine) -> None:
+    """A sitemap that lists a page the crawler can't reach should:
+    - be persisted as a Sitemap row with the URL list
+    - emit a structure.sitemap.in_sitemap_only finding for the missing URL
+    """
+    sitemap_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        "<url><loc>https://demo4.test/</loc></url>"
+        "<url><loc>https://demo4.test/orphan</loc></url>"
+        "</urlset>"
+    )
+    respx.get("https://demo4.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo4.test/sitemap.xml").mock(
+        return_value=httpx.Response(
+            200, text=sitemap_xml, headers={"content-type": "application/xml"}
+        )
+    )
+    # Crawl the start page only — /orphan is in the sitemap but not linked
+    respx.get("https://demo4.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html("Eine Startseite mit ausreichend langem Titel hier"),
+            headers={"content-type": "text/html"},
+        )
+    )
+
+    project = Project(
+        name="Demo4",
+        domain="demo4.test",
+        base_url="https://demo4.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+    project_id = project.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after.status == CrawlStatus.COMPLETED
+
+    sitemaps = db_session.query(Sitemap).filter(Sitemap.project_id == project_id).all()
+    assert len(sitemaps) == 1
+    assert sitemaps[0].url == "https://demo4.test/sitemap.xml"
+    assert sitemaps[0].urls_count == 2
+    assert set(sitemaps[0].urls or []) == {
+        "https://demo4.test/",
+        "https://demo4.test/orphan",
+    }
+    assert sitemaps[0].fetch_error is None
+    assert sitemaps[0].last_fetched_at is not None
+
+    issues = db_session.query(Issue).filter(Issue.crawl_id == crawl_id).all()
+    rule_ids = {i.rule_id for i in issues}
+    assert "structure.sitemap.in_sitemap_only" in rule_ids
+    sitemap_only = next(i for i in issues if i.rule_id == "structure.sitemap.in_sitemap_only")
+    assert sitemap_only.payload is None  # no payload — the URL itself is enough
+
+
+@respx.mock
+def test_sitemaps_replaced_on_subsequent_crawl(db_session, engine) -> None:
+    """A second crawl with a different sitemap should replace the first one's
+    Sitemap rows, not accumulate them."""
+    respx.get("https://demo5.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo5.test/sitemap.xml").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+                "<url><loc>https://demo5.test/</loc></url></urlset>"
+            ),
+            headers={"content-type": "application/xml"},
+        )
+    )
+    respx.get("https://demo5.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html("Eine Startseite mit ausreichend langem Titel hier"),
+            headers={"content-type": "text/html"},
+        )
+    )
+
+    project = Project(
+        name="Demo5",
+        domain="demo5.test",
+        base_url="https://demo5.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    project_id = project.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    # First crawl
+    crawl1 = Crawl(project_id=project_id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl1)
+    db_session.commit()
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl1.id)
+
+    # Second crawl
+    crawl2 = Crawl(project_id=project_id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl2)
+    db_session.commit()
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl2.id)
+
+    db_session.expire_all()
+    sitemaps = db_session.query(Sitemap).filter(Sitemap.project_id == project_id).all()
+    assert len(sitemaps) == 1, "second crawl should replace, not accumulate"
 
 
 def test_run_crawl_alias_points_to_job() -> None:

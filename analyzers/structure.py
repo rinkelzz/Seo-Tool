@@ -151,6 +151,18 @@ RULE_EXTERNAL_LINK_UNREACHABLE = _r(
     "External link is unreachable (timeout / DNS / connection error)",
     1.0,
 )
+RULE_SITEMAP_URL_NOT_CRAWLED = _r(
+    "structure.sitemap.in_sitemap_only",
+    FindingSeverity.IMPORTANT,
+    "URL declared in sitemap but not reached by the crawl",
+    1.0,
+)
+RULE_PAGE_NOT_IN_SITEMAP = _r(
+    "structure.sitemap.in_crawl_only",
+    FindingSeverity.TIP,
+    "Page reached by the crawl but missing from sitemap",
+    0.5,
+)
 
 STRUCTURE_RULES: list[Rule] = registry.by_category(CATEGORY)
 
@@ -173,6 +185,7 @@ def analyze_structure(
     *,
     base_url: str,
     external_statuses: dict[str, int | None] | None = None,
+    sitemap_urls: set[str] | None = None,
 ) -> list[Finding]:
     """Run all structure rules against a completed crawl.
 
@@ -182,6 +195,9 @@ def analyze_structure(
         external_statuses: optional ``target_url → status_code`` map produced by
             the external link checker. ``None`` status means the request failed.
             If omitted, broken/unreachable external-link findings are skipped.
+        sitemap_urls: optional set of URLs declared in the project's sitemaps.
+            When supplied, the analyzer emits findings for URLs in the sitemap
+            that the crawl missed and for crawled pages absent from the sitemap.
     """
     graph = _build_graph(crawl)
     findings: list[Finding] = []
@@ -194,6 +210,8 @@ def analyze_structure(
     findings.extend(_redirect_findings(crawl))
     if external_statuses is not None:
         findings.extend(_external_link_findings(graph, external_statuses))
+    if sitemap_urls is not None:
+        findings.extend(_sitemap_diff_findings(graph, sitemap_urls, base_url=base_url))
     return findings
 
 
@@ -411,6 +429,34 @@ def _external_link_findings(graph: _Graph, statuses: dict[str, int | None]) -> l
                         {"target": target, "status_code": status},
                     )
                 )
+    return out
+
+
+def _sitemap_diff_findings(
+    graph: _Graph, sitemap_urls: set[str], *, base_url: str
+) -> list[Finding]:
+    """Compare crawled pages against the union of sitemap URLs.
+
+    Two complementary findings:
+    - URLs in the sitemap but never reached by the crawl (the more important
+      direction — typically means broken internal linking or that the page
+      isn't actually reachable from the start URL).
+    - Pages reached by the crawl but absent from the sitemap (lower severity;
+      common for paginated archives, filter combinations, search result pages).
+
+    External-host URLs in the sitemap (e.g. canonical CDN URLs) are ignored
+    because the crawler doesn't follow off-site links anyway.
+    """
+    out: list[Finding] = []
+    crawled = graph.same_site_pages
+    same_site_sitemap = {u for u in sitemap_urls if is_same_site(u, base_url)}
+
+    for sitemap_url in same_site_sitemap - crawled:
+        out.append(_finding(RULE_SITEMAP_URL_NOT_CRAWLED, sitemap_url, {}))
+
+    for crawled_url in crawled - same_site_sitemap:
+        out.append(_finding(RULE_PAGE_NOT_IN_SITEMAP, crawled_url, {}))
+
     return out
 
 

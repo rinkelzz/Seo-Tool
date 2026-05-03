@@ -6,16 +6,17 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 4A (Content-Modul) abgeschlossen.** Hauptinhalt-Extraktion via `trafilatura` (favor_precision, Header/Footer/Nav werden zuverlässig verworfen). Neuer Content-Analyzer mit 7 Regeln: Thin-Content (< 100 Wörter Hauptinhalt), exakte Page-Duplicates (SHA-256 über normalisierten Text), Near-Duplicates (MinHash über 4-Word-Shingles, Jaccard ≥ 0.85), Block-Repetition (gleicher Absatz auf > 3 Seiten = Boilerplate), Title-/H1-Keyword fehlt im Body, Keyword-Cannibalization (mehrere Seiten mit gleichem Top-Term, TF-basiert mit DE+EN-Stopwords). Content-Blocks werden während des Crawls als `ContentBlock`-Rows persistiert. **140 grüne Tests** (war 121).
+**Phase 1B-1 (Sitemap-Discovery & -Diff) abgeschlossen.** Neuer `crawler/sitemap.py` liest `Sitemap:`-Direktiven aus `robots.txt` (Default `/sitemap.xml` als Fallback), folgt Sitemap-Index-Files rekursiv (depth-bounded auf 3, max 50 Sitemaps insgesamt), entgzippt `.xml.gz` transparent. Ergebnis wird als `Sitemap`-Rows pro Projekt persistiert (`urls` als JSONB-Liste, frische Crawls ersetzen ältere Snapshots). Strukturanalyzer um zwei neue Regeln erweitert: `structure.sitemap.in_sitemap_only` (URL deklariert aber nicht gecrawlt — important) und `structure.sitemap.in_crawl_only` (gecrawlt aber nicht im Sitemap — tip). **152 grüne Tests** (war 140).
 
 Vorherige Phasen:
-- Phase 3: Next.js-14-Frontend (Server Components, Tailwind, in-repo shadcn-Primitive) + Backend-API für Crawl-Detail, Summary, Issues, Pages.
-- Phase 2: Strukturanalyzer mit 13 Regeln + asynchroner Externe-Link-Checker.
+- Phase 4A: Content-Modul (Hauptinhalt via trafilatura, Page-Duplicates exakt + MinHash, Block-Boilerplate, Keyword-im-Body, Cannibalization).
+- Phase 3: Next.js-14-Frontend + Backend-API für Crawl-Detail, Summary, Issues, Pages.
+- Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 1B (Sitemap-Discovery, Ressourcen-Crawl), Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
+Noch offen: Phase 1B-2 (Resource-Crawl für CSS/JS), Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
 
-Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)** oder **Phase 1B**.
+Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)**, **Phase 7 (Reports + PDF-Export)** oder **Phase 1B-2**.
 
 ## Schnellstart
 
@@ -83,7 +84,8 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 ## Phasen (Kurzfassung aus PLAN.md)
 
 - [x] Phase 0 — Grundgerüst
-- [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B (Sitemap/Resources) offen
+- [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B-2 (Resource-Crawl CSS/JS) offen
+- [x] Phase 1B-1 — Sitemap-Discovery + Sitemap-Diff
 - [x] Phase 2 — Struktur-Modul (Backend)
 - [x] Phase 3 — Web-UI (Next.js)
 - [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
