@@ -140,6 +140,66 @@ def test_crawl_failure_marks_status(db_session, engine) -> None:
     assert crawl_after.error_message is not None
 
 
+@respx.mock
+def test_external_link_check_populates_status_and_findings(db_session, engine) -> None:
+    """A crawl with an external link should:
+    - probe the external URL (HEAD)
+    - persist target_status_code on the Link row
+    - emit a structure finding when the external link is broken
+    """
+    respx.get("https://demo2.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo2.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html(
+                "Eine Startseite mit ausreichend langem Titel hier",
+                body=(
+                    '<a href="https://broken.test/dead">extern dead</a>'
+                    '<a href="https://ok.test/page">extern ok</a>'
+                ),
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+    respx.head("https://broken.test/dead").mock(return_value=httpx.Response(404))
+    respx.head("https://ok.test/page").mock(return_value=httpx.Response(200))
+
+    project = Project(
+        name="Demo2",
+        domain="demo2.test",
+        base_url="https://demo2.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after.status == CrawlStatus.COMPLETED
+
+    links = db_session.query(Link).filter(Link.crawl_id == crawl_id).all()
+    by_target = {link.target_url: link for link in links}
+    assert by_target["https://broken.test/dead"].target_status_code == 404
+    assert by_target["https://ok.test/page"].target_status_code == 200
+
+    issues = db_session.query(Issue).filter(Issue.crawl_id == crawl_id).all()
+    rule_ids = {i.rule_id for i in issues}
+    assert "structure.external_link.broken" in rule_ids
+    # Structure score must be set, not just tech score
+    assert crawl_after.score_struct is not None
+
+
 def test_run_crawl_alias_points_to_job() -> None:
     """The API enqueues ``worker.jobs.crawl.run_crawl`` — make sure the alias still resolves."""
     from worker.jobs import crawl as crawl_module

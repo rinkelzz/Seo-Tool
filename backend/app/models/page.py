@@ -6,6 +6,7 @@ from sqlalchemy import ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, CreatedAt, PrimaryKey
+from backend.app.db.types import JsonType
 
 if TYPE_CHECKING:
     from backend.app.models.content_block import ContentBlock
@@ -44,6 +45,9 @@ class Page(Base):
     # Strukturmetrik
     depth: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_indexable: Mapped[bool | None] = mapped_column(nullable=True)
+
+    # Redirect-Kette: Liste der Hop-URLs vor der finalen URL (leer = keine Weiterleitung)
+    redirect_chain: Mapped[list[str] | None] = mapped_column(JsonType, nullable=True)
 
     # Fehler-Marker (falls Page nicht abrufbar)
     fetch_error: Mapped[str | None] = mapped_column(String(512), nullable=True)
