@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  @apply h-full bg-slate-50 text-slate-900;
+}
+
+body {
+  @apply font-sans antialiased;
+}

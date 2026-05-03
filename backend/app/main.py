@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from backend.app.api import crawls, projects
+from backend.app.api import crawls, issues, pages, projects
 from backend.app.core.settings import get_settings
 
 settings = get_settings()
@@ -22,3 +22,5 @@ def health() -> dict[str, str]:
 
 app.include_router(projects.router)
 app.include_router(crawls.router)
+app.include_router(issues.router)
+app.include_router(pages.router)

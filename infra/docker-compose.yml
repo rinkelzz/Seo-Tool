@@ -65,6 +65,22 @@ services:
         condition: service_healthy
     command: python -m worker.main
 
+  web:
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      # Backend reachable from inside the compose network as "backend"
+      API_URL: http://backend:8000
+      # Authentication: forwarded as Bearer token to FastAPI. The frontend
+      # never exposes this to the browser — all API calls happen server-side.
+      API_TOKEN: ${APP_API_TOKEN:-change-me}
+      NODE_ENV: production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
 volumes:
   db_data:
   redis_data:
