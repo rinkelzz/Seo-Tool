@@ -3,14 +3,11 @@
 import enum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Enum, ForeignKey, Index, String
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Enum, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, CreatedAt, PrimaryKey
-
-# JSONB on Postgres, JSON on SQLite (for tests). Same Python API.
-JsonType = JSON().with_variant(JSONB(), "postgresql")
+from backend.app.db.types import JsonType
 
 if TYPE_CHECKING:
     from backend.app.models.crawl import Crawl

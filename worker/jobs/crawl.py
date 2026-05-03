@@ -9,6 +9,7 @@ import structlog
 
 from analyzers.base import Finding, FindingCategory
 from analyzers.scoring import compute_scores, overall_score
+from analyzers.structure import analyze_structure
 from analyzers.tech_meta import analyze_tech_meta
 from backend.app.core.settings import get_settings
 from backend.app.db.base import get_session_factory
@@ -20,6 +21,7 @@ from backend.app.models.page import Page
 from backend.app.models.project import Project
 from crawler.engine import CrawlConfig, CrawledPage, CrawlResult
 from crawler.engine import run_crawl as _run_crawler
+from crawler.external import check_external_links, to_status_map
 
 log = structlog.get_logger(__name__)
 
@@ -60,7 +62,9 @@ def run_crawl_job(crawl_id: int) -> None:
         )
 
         try:
-            crawl_result = asyncio.run(_run_crawler(config))
+            crawl_result, external_statuses = asyncio.run(
+                _crawl_and_check(config, settings.crawler_max_concurrency)
+            )
         except Exception as exc:  # noqa: BLE001
             log.exception("crawl_failed", crawl_id=crawl_id)
             crawl.status = CrawlStatus.FAILED
@@ -70,8 +74,14 @@ def run_crawl_job(crawl_id: int) -> None:
             return
 
         try:
-            url_to_page_id = _persist_pages_and_assets(db, crawl_id, crawl_result)
-            findings = analyze_tech_meta(crawl_result)
+            url_to_page_id = _persist_pages_and_assets(
+                db, crawl_id, crawl_result, external_statuses
+            )
+            findings = analyze_tech_meta(crawl_result) + analyze_structure(
+                crawl_result,
+                base_url=project.base_url,
+                external_statuses=external_statuses,
+            )
             _persist_findings(db, crawl_id, findings, url_to_page_id)
             _persist_scores(db, crawl, findings, len(crawl_result.html_pages()))
             crawl.status = CrawlStatus.COMPLETED
@@ -100,13 +110,42 @@ def run_crawl_job(crawl_id: int) -> None:
 run_crawl = run_crawl_job
 
 
+async def _crawl_and_check(
+    config: CrawlConfig, concurrency: int
+) -> tuple[CrawlResult, dict[str, int | None]]:
+    """Run the main crawl, then probe all external links found in it.
+
+    Both run in the same event loop so we share the asyncio runtime and the
+    structlog context. The external probe is best-effort — if it fails we
+    return an empty status map and let the structure analyzer skip those
+    findings.
+    """
+    crawl_result = await _run_crawler(config)
+    try:
+        checks = await check_external_links(
+            crawl_result, user_agent=config.user_agent, concurrency=concurrency
+        )
+        return crawl_result, to_status_map(checks)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("external_link_check_failed", error=str(exc))
+        return crawl_result, {}
+
+
 # --- persistence helpers ---------------------------------------------------
 
 
 def _persist_pages_and_assets(
-    db, crawl_id: int, crawl_result: CrawlResult  # noqa: ANN001 (Session)
+    db,  # noqa: ANN001 (Session)
+    crawl_id: int,
+    crawl_result: CrawlResult,
+    external_statuses: dict[str, int | None] | None = None,
 ) -> dict[str, int]:
-    """Insert ``Page``, ``Image``, ``Link`` rows. Returns final_url → page_id."""
+    """Insert ``Page``, ``Image``, ``Link`` rows. Returns final_url → page_id.
+
+    ``external_statuses`` is the (optional) map produced by the external link
+    checker; when present, link rows get their ``target_status_code`` filled in.
+    """
+    statuses = external_statuses or {}
     url_to_page_id: dict[str, int] = {}
 
     for cp in crawl_result.pages:
@@ -135,6 +174,7 @@ def _persist_pages_and_assets(
                         rel=link.rel[:255] if link.rel else None,
                         is_internal=link.is_internal,
                         is_followed=link.is_followed,
+                        target_status_code=statuses.get(link.target_url),
                     )
                 )
     db.flush()
@@ -161,6 +201,7 @@ def _build_page(crawl_id: int, cp: CrawledPage) -> Page:
         word_count=pd.word_count if pd else None,
         depth=cp.depth,
         is_indexable=(pd.is_indexable if pd else None),
+        redirect_chain=fr.redirect_chain or None,
         fetch_error=fr.error[:512] if fr.error else None,
     )
 

@@ -6,11 +6,13 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 1 (Crawler + Tech/Meta-Modul) — Teil A abgeschlossen.** Async-Crawler (`httpx` + `selectolax`) mit BFS, Concurrency-Limit, robots.txt-Respect, Sitemap- und Resource-Crawl noch nicht enthalten. Tech/Meta-Analyzer mit 22 Regeln (Title, Meta-Description, H1, Alt-Texte, Antwortzeit, Sprache, URL-Hygiene, HTTP-Fehler, noindex, HTML-Größe, Duplicate-Detection für Title/Description). Score-Berechnung pro Kategorie + Overall. Worker-Job persistiert Pages, Images, Links, Issues und Scores in einer Transaktion. **84 grüne Tests**, ruff + black sauber.
+**Phase 2 (Strukturmodul) abgeschlossen.** Aufbauend auf Phase 1A: neuer Strukturanalyzer mit 13 Regeln — Klicktiefe (Tip/Important nach Schwellwerten), Orphan-Detection (Pages ohne eingehende interne Links), Outlink-Auffälligkeiten (keine / sehr viele), generische und mehrdeutige Anchor-Texte, Canonical-Hygiene (Cross-Domain, Mismatch), Redirect-Ketten (>2 Hops) und Redirect-Schleifen sowie externe Link-Health (broken / unreachable). Externer Link-Status-Checker (`HEAD` mit `GET`-Fallback bei 405/501) läuft als zweiter Pass nach dem Hauptcrawl, deduplizierte Probes, Throttling über Semaphore. `Page.redirect_chain` persistiert via Alembic-Migration. **109 grüne Tests** (war 84), ruff + black sauber.
+
+Phase 1A liefert: Async-Crawler (`httpx` + `selectolax`) mit BFS, Concurrency, robots.txt; Tech/Meta-Analyzer mit 22 Regeln; Score pro Kategorie + Overall.
 
 Noch offen in Phase 1 (Teil B): Sitemap-Discovery, Ressourcen-Crawl (CSS/JS), Web-UI für Issue-Drilldown.
 
-Nächster Schritt: entweder Phase 1-B oder direkt **Phase 2 (Strukturmodul)** — Link-Graph, Klicktiefe, Linktext-Analyse, Redirect-Ketten.
+Nächster Schritt: **Phase 3 (Content-Modul)** — Hauptinhalt-Extraktion, Duplicate-Content-Detection (MinHash/SimHash), Boilerplate-Erkennung, Keyword-Cannibalization, Title/H1-Keyword-Vergleich, Tippfehler via LanguageTool.
 
 ## Schnellstart
 
@@ -62,7 +64,7 @@ mypy backend worker crawler analyzers
 
 - [x] Phase 0 — Grundgerüst
 - [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B (Sitemap/Resources/UI) offen
-- [ ] Phase 2 — Struktur-Modul
+- [x] Phase 2 — Struktur-Modul (Backend)
 - [ ] Phase 3 — Content-Modul
 - [ ] Phase 4 — Keyword-Tracking via Google Search Console
 - [ ] Phase 5 — Backlink-Monitoring via GSC + Bing WMT
