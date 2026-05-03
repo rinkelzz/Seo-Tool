@@ -18,8 +18,10 @@ from analyzers.structure import (
     RULE_INLINKS_NONE,
     RULE_OUTLINKS_MANY,
     RULE_OUTLINKS_NONE,
+    RULE_PAGE_NOT_IN_SITEMAP,
     RULE_REDIRECT_LONG_CHAIN,
     RULE_REDIRECT_LOOP,
+    RULE_SITEMAP_URL_NOT_CRAWLED,
     analyze_structure,
 )
 from crawler.engine import CrawledPage, CrawlResult
@@ -292,3 +294,47 @@ def test_external_check_skipped_without_statuses() -> None:
     ids = _ids(findings)
     assert RULE_EXTERNAL_LINK_BROKEN.rule_id not in ids
     assert RULE_EXTERNAL_LINK_UNREACHABLE.rule_id not in ids
+
+
+# --- sitemap diff ---
+
+
+def test_sitemap_only_url_flagged() -> None:
+    home = _make_page(url="https://example.com/", depth=0, links=[])
+    sitemap = {"https://example.com/", "https://example.com/missed-page"}
+    findings = analyze_structure(_result(home), base_url=BASE, sitemap_urls=sitemap)
+    not_crawled = [f for f in findings if f.rule_id == RULE_SITEMAP_URL_NOT_CRAWLED.rule_id]
+    assert len(not_crawled) == 1
+    assert not_crawled[0].page_url == "https://example.com/missed-page"
+
+
+def test_crawl_only_page_flagged_as_tip() -> None:
+    home = _make_page(url="https://example.com/", depth=0, links=[])
+    extra = _make_page(url="https://example.com/extra", depth=1, links=[])
+    sitemap = {"https://example.com/"}  # /extra is missing from sitemap
+    findings = analyze_structure(_result(home, extra), base_url=BASE, sitemap_urls=sitemap)
+    not_in_sitemap = [f for f in findings if f.rule_id == RULE_PAGE_NOT_IN_SITEMAP.rule_id]
+    assert len(not_in_sitemap) == 1
+    assert not_in_sitemap[0].page_url == "https://example.com/extra"
+
+
+def test_external_sitemap_urls_ignored() -> None:
+    """A sitemap that lists URLs on a different host shouldn't generate
+    'in_sitemap_only' findings — the crawler doesn't follow off-site links."""
+    home = _make_page(url="https://example.com/", depth=0, links=[])
+    sitemap = {
+        "https://example.com/",
+        "https://cdn.other.com/asset.xml",  # external
+    }
+    findings = analyze_structure(_result(home), base_url=BASE, sitemap_urls=sitemap)
+    not_crawled = [f for f in findings if f.rule_id == RULE_SITEMAP_URL_NOT_CRAWLED.rule_id]
+    assert not_crawled == []
+
+
+def test_sitemap_diff_skipped_without_sitemap() -> None:
+    home = _make_page(url="https://example.com/", depth=0, links=[])
+    extra = _make_page(url="https://example.com/extra", depth=1, links=[])
+    findings = analyze_structure(_result(home, extra), base_url=BASE, sitemap_urls=None)
+    ids = _ids(findings)
+    assert RULE_SITEMAP_URL_NOT_CRAWLED.rule_id not in ids
+    assert RULE_PAGE_NOT_IN_SITEMAP.rule_id not in ids

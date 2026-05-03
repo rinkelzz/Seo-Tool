@@ -22,9 +22,12 @@ from backend.app.models.issue import Issue, IssueCategory, IssueSeverity
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.sitemap import Sitemap
 from crawler.engine import CrawlConfig, CrawledPage, CrawlResult
 from crawler.engine import run_crawl as _run_crawler
 from crawler.external import check_external_links, to_status_map
+from crawler.fetcher import make_client
+from crawler.sitemap import SitemapBundle, discover_and_fetch
 
 log = structlog.get_logger(__name__)
 
@@ -65,8 +68,8 @@ def run_crawl_job(crawl_id: int) -> None:
         )
 
         try:
-            crawl_result, external_statuses = asyncio.run(
-                _crawl_and_check(config, settings.crawler_max_concurrency)
+            crawl_result, external_statuses, sitemap_bundle = asyncio.run(
+                _crawl_check_and_sitemap(config, settings.crawler_max_concurrency)
             )
         except Exception as exc:  # noqa: BLE001
             log.exception("crawl_failed", crawl_id=crawl_id)
@@ -80,12 +83,14 @@ def run_crawl_job(crawl_id: int) -> None:
             url_to_page_id = _persist_pages_and_assets(
                 db, crawl_id, crawl_result, external_statuses
             )
+            _persist_sitemaps(db, project.id, sitemap_bundle)
             findings = (
                 analyze_tech_meta(crawl_result)
                 + analyze_structure(
                     crawl_result,
                     base_url=project.base_url,
                     external_statuses=external_statuses,
+                    sitemap_urls=sitemap_bundle.all_urls or None,
                 )
                 + analyze_content(crawl_result)
             )
@@ -117,25 +122,40 @@ def run_crawl_job(crawl_id: int) -> None:
 run_crawl = run_crawl_job
 
 
-async def _crawl_and_check(
+async def _crawl_check_and_sitemap(
     config: CrawlConfig, concurrency: int
-) -> tuple[CrawlResult, dict[str, int | None]]:
-    """Run the main crawl, then probe all external links found in it.
+) -> tuple[CrawlResult, dict[str, int | None], SitemapBundle]:
+    """Run the main crawl, probe external links, and discover sitemaps.
 
-    Both run in the same event loop so we share the asyncio runtime and the
-    structlog context. The external probe is best-effort — if it fails we
-    return an empty status map and let the structure analyzer skip those
-    findings.
+    Each step is best-effort: failures in the external check or sitemap
+    discovery don't tank the whole crawl — the analyzer just skips the
+    relevant findings.
     """
     crawl_result = await _run_crawler(config)
+
     try:
         checks = await check_external_links(
             crawl_result, user_agent=config.user_agent, concurrency=concurrency
         )
-        return crawl_result, to_status_map(checks)
+        statuses = to_status_map(checks)
     except Exception as exc:  # noqa: BLE001
         log.warning("external_link_check_failed", error=str(exc))
-        return crawl_result, {}
+        statuses = {}
+
+    try:
+        async with make_client(
+            user_agent=config.user_agent,
+            timeout=config.timeout,
+            max_connections=concurrency,
+        ) as client:
+            bundle = await discover_and_fetch(
+                client, base_url=config.base_url, timeout=config.timeout
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("sitemap_discovery_failed", error=str(exc))
+        bundle = SitemapBundle()
+
+    return crawl_result, statuses, bundle
 
 
 # --- persistence helpers ---------------------------------------------------
@@ -222,6 +242,37 @@ def _build_page(crawl_id: int, cp: CrawledPage) -> Page:
         redirect_chain=fr.redirect_chain or None,
         fetch_error=fr.error[:512] if fr.error else None,
     )
+
+
+def _persist_sitemaps(
+    db,  # noqa: ANN001
+    project_id: int,
+    bundle: SitemapBundle,
+) -> None:
+    """Replace this project's Sitemap rows with the freshly-fetched ones.
+
+    Sitemaps live at the project level (not the crawl level), so each crawl
+    overwrites the previous snapshot. Historical comparison would need a
+    schema change; for now we only need the current sitemap state to drive
+    the diff for this crawl.
+    """
+    if not bundle.sitemaps:
+        return
+
+    db.query(Sitemap).filter(Sitemap.project_id == project_id).delete(synchronize_session=False)
+    now = datetime.now(tz=timezone.utc)
+    for sm in bundle.sitemaps:
+        db.add(
+            Sitemap(
+                project_id=project_id,
+                url=sm.url[:2048],
+                last_fetched_at=now,
+                urls_count=len(sm.urls),
+                urls=sm.urls or None,
+                fetch_error=sm.fetch_error[:512] if sm.fetch_error else None,
+            )
+        )
+    db.flush()
 
 
 def _persist_findings(

@@ -11,6 +11,7 @@ from crawler.engine import CrawlConfig, CrawlResult, run_crawl
 from crawler.external import ExternalCheck, check_external_links, to_status_map
 from crawler.extract import ExtractedImage, ExtractedLink, PageData, extract_page
 from crawler.fetcher import FetchResult, fetch
+from crawler.sitemap import SitemapBundle, SitemapResult, discover_and_fetch
 
 __all__ = [
     "CrawlConfig",
@@ -20,7 +21,10 @@ __all__ = [
     "ExtractedLink",
     "FetchResult",
     "PageData",
+    "SitemapBundle",
+    "SitemapResult",
     "check_external_links",
+    "discover_and_fetch",
     "extract_page",
     "fetch",
     "run_crawl",
