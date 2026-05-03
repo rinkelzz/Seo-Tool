@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from datetime import datetime, timezone
 
 import structlog
 
 from analyzers.base import Finding, FindingCategory
+from analyzers.content import analyze_content
 from analyzers.scoring import compute_scores, overall_score
 from analyzers.structure import analyze_structure
 from analyzers.tech_meta import analyze_tech_meta
 from backend.app.core.settings import get_settings
 from backend.app.db.base import get_session_factory
+from backend.app.models.content_block import ContentBlock
 from backend.app.models.crawl import Crawl, CrawlStatus
 from backend.app.models.image import Image
 from backend.app.models.issue import Issue, IssueCategory, IssueSeverity
@@ -77,10 +80,14 @@ def run_crawl_job(crawl_id: int) -> None:
             url_to_page_id = _persist_pages_and_assets(
                 db, crawl_id, crawl_result, external_statuses
             )
-            findings = analyze_tech_meta(crawl_result) + analyze_structure(
-                crawl_result,
-                base_url=project.base_url,
-                external_statuses=external_statuses,
+            findings = (
+                analyze_tech_meta(crawl_result)
+                + analyze_structure(
+                    crawl_result,
+                    base_url=project.base_url,
+                    external_statuses=external_statuses,
+                )
+                + analyze_content(crawl_result)
             )
             _persist_findings(db, crawl_id, findings, url_to_page_id)
             _persist_scores(db, crawl, findings, len(crawl_result.html_pages()))
@@ -175,6 +182,17 @@ def _persist_pages_and_assets(
                         is_internal=link.is_internal,
                         is_followed=link.is_followed,
                         target_status_code=statuses.get(link.target_url),
+                    )
+                )
+            for block in cp.page_data.content_blocks:
+                normalized = block.lower().strip()
+                block_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+                db.add(
+                    ContentBlock(
+                        page_id=page.id,
+                        block_hash=block_hash,
+                        text_excerpt=block[:2000],
+                        word_count=len(block.split()),
                     )
                 )
     db.flush()

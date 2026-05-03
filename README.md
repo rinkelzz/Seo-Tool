@@ -6,15 +6,16 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 3 (Web-UI) abgeschlossen.** Next.js 14 (App Router, Server Components) + Tailwind 3 + selbstgebaute shadcn-Primitive im neuen `web/`-Verzeichnis. Server-seitiger API-Client liest `APP_API_TOKEN` aus env und proxiert FastAPI-Calls — der Browser sieht den Token nie. Pages: Projekt-Liste + Anlegen, Projekt-Übersicht mit Crawl-Historie und „Crawl starten"-Button, Crawl-Detail mit Score-Karten + Severity/Kategorie-gefilterter Issue-Tabelle, Page-Detail mit allen Meta-Daten, Bildern, Links und Findings. Backend um `GET /crawls/{id}`, `/summary`, `/issues` (paginiert + filterbar), `/pages`, `/pages/{id}` erweitert. **121 grüne Backend-Tests**, Next.js typecheck + production build sauber.
+**Phase 4A (Content-Modul) abgeschlossen.** Hauptinhalt-Extraktion via `trafilatura` (favor_precision, Header/Footer/Nav werden zuverlässig verworfen). Neuer Content-Analyzer mit 7 Regeln: Thin-Content (< 100 Wörter Hauptinhalt), exakte Page-Duplicates (SHA-256 über normalisierten Text), Near-Duplicates (MinHash über 4-Word-Shingles, Jaccard ≥ 0.85), Block-Repetition (gleicher Absatz auf > 3 Seiten = Boilerplate), Title-/H1-Keyword fehlt im Body, Keyword-Cannibalization (mehrere Seiten mit gleichem Top-Term, TF-basiert mit DE+EN-Stopwords). Content-Blocks werden während des Crawls als `ContentBlock`-Rows persistiert. **140 grüne Tests** (war 121).
 
 Vorherige Phasen:
-- Phase 1A: Async-Crawler (`httpx` + `selectolax`) mit BFS, Concurrency, robots.txt; Tech/Meta-Analyzer mit 22 Regeln.
-- Phase 2: Strukturanalyzer mit 13 Regeln (Klicktiefe, Orphan-Detection, Outlink-Auffälligkeiten, Anchor-Hygiene, Canonical, Redirect-Ketten/Loops, externe Link-Health) + asynchroner Externe-Link-Checker.
+- Phase 3: Next.js-14-Frontend (Server Components, Tailwind, in-repo shadcn-Primitive) + Backend-API für Crawl-Detail, Summary, Issues, Pages.
+- Phase 2: Strukturanalyzer mit 13 Regeln + asynchroner Externe-Link-Checker.
+- Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen in Phase 1 (Teil B): Sitemap-Discovery, Ressourcen-Crawl (CSS/JS).
+Noch offen: Phase 1B (Sitemap-Discovery, Ressourcen-Crawl), Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
 
-Nächster Schritt: **Phase 4 (Content-Modul)** — Hauptinhalt-Extraktion, Duplicate-Content-Detection (MinHash/SimHash), Boilerplate-Erkennung, Keyword-Cannibalization, Tippfehler via LanguageTool.
+Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)** oder **Phase 1B**.
 
 ## Schnellstart
 
@@ -85,7 +86,7 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B (Sitemap/Resources) offen
 - [x] Phase 2 — Struktur-Modul (Backend)
 - [x] Phase 3 — Web-UI (Next.js)
-- [ ] Phase 4 — Content-Modul
+- [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
 - [ ] Phase 4 — Keyword-Tracking via Google Search Console
 - [ ] Phase 5 — Backlink-Monitoring via GSC + Bing WMT
 - [ ] Phase 6 — Reports + Multi-Projekt-Polish

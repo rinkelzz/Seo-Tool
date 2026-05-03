@@ -110,3 +110,43 @@ def test_strips_script_and_style_from_word_count() -> None:
         """)
     pd = extract_page(url=BASE, body=body)
     assert pd.word_count == 4
+
+
+def test_main_text_extracted_via_trafilatura() -> None:
+    body = _html("""
+        <html lang="de">
+        <body>
+            <header><nav>Navigation hier mit vielen Links</nav></header>
+            <main>
+                <article>
+                    <h1>Hauptartikel</h1>
+                    <p>Dies ist ein ausreichend langer Hauptabsatz mit ein paar
+                    sinnvollen Wörtern, damit trafilatura ihn als Hauptinhalt
+                    erkennt und nicht als Boilerplate verwirft.</p>
+                    <p>Hier kommt ein zweiter Absatz, ebenfalls mit genug Inhalt
+                    damit er als eigenständiger Block aufgenommen wird.</p>
+                </article>
+            </main>
+            <footer>Copyright 2026 — alle Rechte vorbehalten</footer>
+        </body>
+        </html>
+        """)
+    pd = extract_page(url=BASE, body=body)
+    assert pd.main_text is not None
+    assert "Hauptabsatz" in pd.main_text
+    # Footer/Nav should be filtered out (favor_precision=True)
+    assert "Copyright" not in pd.main_text
+    assert pd.main_word_count > 0
+    assert len(pd.content_blocks) >= 1
+    # Each block should be a non-empty trimmed paragraph
+    for block in pd.content_blocks:
+        assert block == block.strip()
+        assert len(block.split()) >= 5
+
+
+def test_main_text_none_when_nothing_extractable() -> None:
+    body = _html("<html><body></body></html>")
+    pd = extract_page(url=BASE, body=body)
+    assert pd.main_text is None
+    assert pd.main_word_count == 0
+    assert pd.content_blocks == []
