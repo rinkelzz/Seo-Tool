@@ -11,12 +11,18 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
+import trafilatura
 from selectolax.parser import HTMLParser, Node
 
 from crawler.urls import is_same_site, normalize_url
 
 # Word-token regex used for word-count and "keyword in body?" checks.
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
+
+# Minimum word count for a paragraph to count as a "content block" worth
+# tracking for boilerplate / duplicate detection. Anything shorter is noise
+# (single words, button labels, copyright lines).
+_BLOCK_MIN_WORDS = 5
 
 
 @dataclass
@@ -68,6 +74,13 @@ class PageData:
     word_count: int = 0
     text_excerpt: str = ""
 
+    # Main-content extraction (boilerplate stripped via trafilatura). Used by
+    # the content analyzer for duplicate detection, keyword-in-body checks,
+    # and TF-IDF keyword extraction.
+    main_text: str | None = None
+    main_word_count: int = 0
+    content_blocks: list[str] = field(default_factory=list)
+
     images: list[ExtractedImage] = field(default_factory=list)
     links: list[ExtractedLink] = field(default_factory=list)
 
@@ -110,6 +123,11 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
     word_count = len(words)
     text_excerpt = body_text[:500]
 
+    main_text = _extract_main_content(body)
+    main_words = _WORD_RE.findall(main_text) if main_text else []
+    main_word_count = len(main_words)
+    content_blocks = _split_blocks(main_text) if main_text else []
+
     images = _collect_images(tree)
     links = _collect_links(tree, base_url=url)
 
@@ -129,6 +147,9 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
         bold_count=bold_count,
         word_count=word_count,
         text_excerpt=text_excerpt,
+        main_text=main_text,
+        main_word_count=main_word_count,
+        content_blocks=content_blocks,
         images=images,
         links=links,
     )
@@ -199,6 +220,53 @@ def _collect_images(tree: HTMLParser) -> list[ExtractedImage]:
             continue
         alt = img.attributes.get("alt")
         out.append(ExtractedImage(src=src.strip(), alt=alt))
+    return out
+
+
+def _extract_main_content(body: bytes) -> str | None:
+    """Run trafilatura against the raw HTML to get the main article text.
+
+    Returns ``None`` when nothing extractable was found (login pages, pure
+    navigation, etc.). We pass ``favor_precision=True`` so that the extractor
+    prefers leaving boilerplate out — false negatives are better than
+    contaminating duplicate detection with header/footer text.
+    """
+    try:
+        result = trafilatura.extract(
+            body,
+            output_format="txt",
+            favor_precision=True,
+            include_comments=False,
+            include_tables=True,
+            no_fallback=False,
+        )
+    except Exception:  # noqa: BLE001 — trafilatura may raise on weird HTML
+        return None
+    if not result:
+        return None
+    text = result.strip()
+    return text or None
+
+
+def _split_blocks(main_text: str) -> list[str]:
+    """Split main content into paragraph-level blocks for boilerplate detection.
+
+    Trafilatura's plaintext output uses ``\\n`` between paragraphs. We split,
+    normalise whitespace, drop very short blocks, and deduplicate within the
+    page (one block tracked once even if repeated within the page).
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in main_text.split("\n"):
+        block = re.sub(r"\s+", " ", raw).strip()
+        if not block:
+            continue
+        if len(_WORD_RE.findall(block)) < _BLOCK_MIN_WORDS:
+            continue
+        if block in seen:
+            continue
+        seen.add(block)
+        out.append(block)
     return out
 
 

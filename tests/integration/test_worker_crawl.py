@@ -12,6 +12,7 @@ import httpx
 import pytest
 import respx
 
+from backend.app.models.content_block import ContentBlock
 from backend.app.models.crawl import Crawl, CrawlStatus
 from backend.app.models.image import Image
 from backend.app.models.issue import Issue
@@ -198,6 +199,62 @@ def test_external_link_check_populates_status_and_findings(db_session, engine) -
     assert "structure.external_link.broken" in rule_ids
     # Structure score must be set, not just tech score
     assert crawl_after.score_struct is not None
+
+
+@respx.mock
+def test_content_blocks_persisted_and_score_set(db_session, engine) -> None:
+    """A page with extractable main content should produce ContentBlock rows
+    and a non-null score_content."""
+    rich_body = (
+        "<article>"
+        "<h1>Hauptartikel mit ausreichend Inhalt</h1>"
+        "<p>Dies ist ein erster Absatz, der lang genug ist um vom Trafilatura-"
+        "Extraktor als Hauptinhalt erkannt zu werden und auch die "
+        "Block-Mindestlänge übersteigt.</p>"
+        "<p>Hier kommt ein zweiter, ebenfalls inhaltsschwerer Absatz, damit "
+        "wir mehr als einen Content-Block für die Persistenz-Prüfung haben.</p>"
+        "</article>"
+    )
+    respx.get("https://demo3.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo3.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=_html("Eine Startseite mit ausreichend langem Titel hier", body=rich_body),
+            headers={"content-type": "text/html"},
+        )
+    )
+
+    project = Project(
+        name="Demo3",
+        domain="demo3.test",
+        base_url="https://demo3.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after.status == CrawlStatus.COMPLETED
+    assert crawl_after.score_content is not None  # content score now populated
+
+    blocks = db_session.query(ContentBlock).all()
+    assert len(blocks) >= 1
+    for block in blocks:
+        assert len(block.block_hash) == 64  # SHA-256 hex
+        assert block.word_count >= 5
+        assert block.text_excerpt.strip() == block.text_excerpt
 
 
 def test_run_crawl_alias_points_to_job() -> None:

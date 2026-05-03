@@ -19,6 +19,8 @@ dependencies = [
     "lxml>=5.0",
     "structlog>=24.1",
     "tenacity>=8.2",
+    "trafilatura>=1.12",
+    "datasketch>=1.6",
 ]
 
 [project.optional-dependencies]
