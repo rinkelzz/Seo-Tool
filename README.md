@@ -6,7 +6,15 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 7-C (Crawl-Vergleich + CSV-Export) abgeschlossen.** Reporting-Story damit komplett.
+**Phase 8-A (UI-Polish) abgeschlossen.** Drei Quality-of-Life-Verbesserungen für die Web-UI:
+
+- **Live-Polling**: AutoRefresh-Component aktualisiert Projekt- und Crawl-Detail-Page alle 5 s automatisch, solange ein Crawl im `queued`- oder `running`-Status ist. Kein manuelles Reloaden mehr.
+- **Resources-Drilldown** auf der Page-Detail-Page: zeigt die gefundenen CSS/JS/Image-Ressourcen samt Status-Code und Mixed-Content-Flag (Daten waren in DB, wurden aber nirgends angezeigt). Page-Detail-API liefert jetzt `resources: ResourceRead[]` mit.
+- **Sitemap-Übersicht** auf der Projekt-Detail-Page: neuer Endpoint `GET /api/projects/{id}/sitemaps` listet alle gefundenen Sitemaps mit URL-Count, Last-Fetched-At und Fetch-Error-Status.
+
+**199 grüne Tests** (war 195).
+
+Phase 7-C (Crawl-Vergleich + CSV-Export): siehe vorherige Releases.
 
 - **Crawl-vs-Crawl-Vergleich**: neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/compare/{other_id}.html`. Diff über `(rule_id, page_url)` mit drei Buckets pro Kategorie — neue Findings (in B nicht in A), behobene (in A nicht in B), persistente. Score-Deltas pro Kategorie + Overall, Reihenfolge wird automatisch chronologisch normalisiert (kleinere Crawl-ID = "vorher"). Eigenes Jinja2-Template ([crawl_comparison.html](backend/app/templates/reports/crawl_comparison.html)) mit Score-Karten, Delta-Pfeilen und farbcodierten Badges. Frontend: „Vergleichen mit…"-Dropdown auf der Crawl-Detail-Page (zeigt alle anderen completed Crawls).
 - **CSV-Export**: `GET /api/projects/{pid}/crawls/{cid}/issues.csv` streamt Findings als UTF-8-CSV mit BOM (Excel-kompatibel für Umlaute), JSON-serialisierte Payload-Spalte. Frontend: „CSV ↓"-Button. Streaming via `yield_per(500)` damit Crawls mit hunderttausenden Findings nicht den Worker sprengen.
@@ -26,9 +34,9 @@ Vorherige Phasen:
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 5 (Keyword-Tracking via GSC), Phase 6 (Backlink-Monitoring), UI-Polish (Live-Polling, Resource-/Sitemap-Drilldown).
+Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 5 (Keyword-Tracking via GSC), Phase 6 (Backlink-Monitoring), Pagination/Such-Filter im Frontend.
 
-Nächster Schritt: **Phase 5 (Keyword-Tracking via GSC)**, **UI-Polish** oder **Phase 4B (LanguageTool)**.
+Nächster Schritt: **Phase 5 (Keyword-Tracking via GSC)** oder **Phase 4B (LanguageTool)**.
 
 ## Schnellstart
 
@@ -105,5 +113,6 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 7-A — HTML-Report pro Crawl
 - [x] Phase 7-B — PDF-Export (WeasyPrint)
 - [x] Phase 7-C — Crawl-A-vs-B-Vergleich + CSV-Export
+- [x] Phase 8-A — UI-Polish (Live-Polling, Resources/Sitemap-Drilldown)
 - [ ] Phase 5 — Keyword-Tracking via Google Search Console
 - [ ] Phase 6 — Backlink-Monitoring via GSC + Bing WMT

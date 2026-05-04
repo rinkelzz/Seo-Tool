@@ -19,6 +19,7 @@ import type {
   PageListResponse,
   Project,
   ProjectCreate,
+  SitemapRow,
 } from "@/lib/types";
 
 const DEFAULT_API_URL = "http://backend:8000";
@@ -176,6 +177,10 @@ export const api = {
     request<PageDetail>(
       `/api/projects/${projectId}/crawls/${crawlId}/pages/${pageId}`,
     ),
+
+  // ---- sitemaps ----
+  listSitemaps: (projectId: number) =>
+    request<SitemapRow[]>(`/api/projects/${projectId}/sitemaps`),
 
   // ---- reports ----
   getCrawlReportHtml: (projectId: number, crawlId: number) =>

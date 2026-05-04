@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from backend.app.api import crawls, issues, pages, projects, reports
+from backend.app.api import crawls, issues, pages, projects, reports, sitemaps
 from backend.app.core.settings import get_settings
 
 settings = get_settings()
@@ -25,3 +25,4 @@ app.include_router(crawls.router)
 app.include_router(issues.router)
 app.include_router(pages.router)
 app.include_router(reports.router)
+app.include_router(sitemaps.router)

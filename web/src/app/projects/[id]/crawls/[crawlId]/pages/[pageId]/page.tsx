@@ -184,6 +184,62 @@ export default async function PageDetailPage({ params }: PageProps) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Eingebundene Ressourcen ({page.resources.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {page.resources.length === 0 ? (
+            <p className="px-5 py-6 text-center text-sm text-slate-500">
+              Keine CSS/JS/Bild-Ressourcen entdeckt.
+            </p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Typ</TH>
+                  <TH>URL</TH>
+                  <TH>Status</TH>
+                  <TH>Hinweis</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {page.resources.map((res) => (
+                  <TR key={res.id}>
+                    <TD>
+                      <Badge tone="neutral">{res.resource_type}</Badge>
+                    </TD>
+                    <TD className="break-all text-xs">{res.url}</TD>
+                    <TD>
+                      {res.status_code === null ? (
+                        res.probe_error ? (
+                          <Badge tone="critical">unreachable</Badge>
+                        ) : (
+                          <Badge tone="neutral">—</Badge>
+                        )
+                      ) : res.status_code >= 400 ? (
+                        <Badge tone="critical">HTTP {res.status_code}</Badge>
+                      ) : (
+                        <Badge tone="success">HTTP {res.status_code}</Badge>
+                      )}
+                    </TD>
+                    <TD>
+                      {res.is_mixed_content ? (
+                        <Badge tone="critical">mixed-content</Badge>
+                      ) : res.is_internal ? (
+                        <span className="text-xs text-slate-500">intern</span>
+                      ) : (
+                        <span className="text-xs text-slate-500">extern</span>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
