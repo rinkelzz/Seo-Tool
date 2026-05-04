@@ -75,14 +75,24 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
           </p>
         </div>
         {crawl.status === "completed" && (
-          <a
-            href={`/projects/${projectId}/crawls/${crawlId}/report`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
-          >
-            Report ansehen ↗
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={`/projects/${projectId}/crawls/${crawlId}/report`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+            >
+              Report ansehen ↗
+            </a>
+            <a
+              href={`/projects/${projectId}/crawls/${crawlId}/report.pdf`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              PDF herunterladen ↓
+            </a>
+          </div>
         )}
       </div>
 

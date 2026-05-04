@@ -101,6 +101,30 @@ async function requestText(path: string, init: RequestInit = {}): Promise<string
   return await res.text();
 }
 
+/** Fetch a binary resource (PDF) and return the raw bytes plus the
+ * upstream Content-Type / Content-Disposition headers so the passthrough
+ * route can forward them to the browser unchanged.
+ */
+async function requestBinary(
+  path: string,
+  init: RequestInit = {},
+): Promise<{ body: ArrayBuffer; contentType: string; contentDisposition: string | null }> {
+  noStore();
+  const url = new URL(path, apiUrl());
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${apiToken()}`);
+  const res = await fetch(url, { ...init, headers, cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text}`.trim());
+  }
+  return {
+    body: await res.arrayBuffer(),
+    contentType: res.headers.get("content-type") ?? "application/octet-stream",
+    contentDisposition: res.headers.get("content-disposition"),
+  };
+}
+
 export const api = {
   // ---- projects ----
   listProjects: () => request<Project[]>("/api/projects"),
@@ -156,6 +180,8 @@ export const api = {
   // ---- reports ----
   getCrawlReportHtml: (projectId: number, crawlId: number) =>
     requestText(`/api/projects/${projectId}/crawls/${crawlId}/report.html`),
+  getCrawlReportPdf: (projectId: number, crawlId: number) =>
+    requestBinary(`/api/projects/${projectId}/crawls/${crawlId}/report.pdf`),
 };
 
 export { ApiError };

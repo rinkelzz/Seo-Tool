@@ -285,3 +285,85 @@ def test_report_endpoint_requires_auth(client, seeded_crawl) -> None:
         f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/report.html"
     )
     assert resp.status_code in (401, 403)
+
+
+# ---- PDF endpoint --------------------------------------------------------
+#
+# WeasyPrint pulls in Pango/Cairo at import time, which isn't reliable on
+# every CI/dev machine. We mock ``render_pdf`` so the test exercises the
+# endpoint plumbing (auth, 404 paths, content-type, content-disposition,
+# bytes round-trip) without booting the GTK stack.
+
+
+def test_pdf_endpoint_returns_pdf_bytes(client, auth_headers, seeded_crawl, monkeypatch) -> None:
+    fake_pdf = b"%PDF-1.4\n%fake-from-test\n%%EOF"
+    monkeypatch.setattr(
+        "backend.app.api.reports.report_pdf",
+        lambda db, project, crawl: fake_pdf,
+    )
+
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/report.pdf",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content == fake_pdf
+    assert resp.content.startswith(b"%PDF-")
+    # Filename is the project domain + crawl id
+    cd = resp.headers.get("content-disposition", "")
+    assert "report.example" in cd
+    assert f"crawl-{seeded_crawl['crawl_id']}" in cd
+
+
+def test_pdf_endpoint_404_for_unknown_crawl(
+    client, auth_headers, seeded_crawl, monkeypatch
+) -> None:
+    # render_pdf must NOT run when the precondition check fails — so we set a
+    # tripwire that would explode if the endpoint accidentally fell through.
+    monkeypatch.setattr(
+        "backend.app.api.reports.report_pdf",
+        lambda *_a, **_kw: pytest.fail("render_pdf must not run on missing crawl"),
+    )
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/9999/report.pdf",
+        headers=auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+def test_pdf_endpoint_requires_auth(client, seeded_crawl) -> None:
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/report.pdf"
+    )
+    assert resp.status_code in (401, 403)
+
+
+def test_render_pdf_lazy_imports_weasyprint(monkeypatch) -> None:
+    """render_pdf must import WeasyPrint at call time, not at module import,
+    so the rest of the codebase (including this test suite) stays loadable
+    on machines without GTK."""
+    # The mere fact this test module imported successfully proves the lazy
+    # import behaviour, but we also exercise the function with a stubbed
+    # WeasyPrint to make sure the call site is shaped correctly.
+    import sys
+    import types
+
+    captured: dict[str, str] = {}
+
+    class _FakeHTML:
+        def __init__(self, *, string: str) -> None:
+            captured["html"] = string
+
+        def write_pdf(self) -> bytes:
+            return b"%PDF-1.4 fake"
+
+    fake_module = types.ModuleType("weasyprint")
+    fake_module.HTML = _FakeHTML  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "weasyprint", fake_module)
+
+    from backend.app.services.reports import render_pdf
+
+    out = render_pdf("<html><body>test</body></html>")
+    assert out == b"%PDF-1.4 fake"
+    assert captured["html"] == "<html><body>test</body></html>"

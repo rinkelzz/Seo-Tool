@@ -8,12 +8,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System-Pakete (lxml braucht libxml2/libxslt)
+# System-Pakete:
+# - build-essential / libxml2-dev / libxslt-dev: lxml-Build
+# - libpango-1.0-0, libpangoft2-1.0-0, libharfbuzz0b, libcairo2,
+#   libgdk-pixbuf-2.0-0, fontconfig, shared-mime-info: WeasyPrint
+#   braucht GTK-Stack zur Laufzeit für PDF-Rendering
+# - fonts-dejavu-core: ohne Font fallback rendert Text in Tofu/Squares
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libxml2-dev \
         libxslt-dev \
         curl \
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz0b \
+        libcairo2 \
+        libgdk-pixbuf-2.0-0 \
+        fontconfig \
+        shared-mime-info \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies separat installieren (besseres Layer-Caching)
