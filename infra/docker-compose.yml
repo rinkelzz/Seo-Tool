@@ -56,6 +56,7 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://seo:seo@db:5432/seo
       REDIS_URL: redis://redis:6379/0
+      LANGUAGETOOL_URL: http://languagetool:8010
     volumes:
       - ../:/app
     depends_on:
@@ -64,6 +65,18 @@ services:
       redis:
         condition: service_healthy
     command: python -m worker.main
+
+  # Optional Tippfehler-Service (Phase 4B). Verbraucht ~600 MB RAM und
+  # zieht ~2 GB beim ersten Pull, daher per CRAWLER_SPELLCHECK_ENABLED
+  # hinter einem Flag versteckt — der Container läuft trotzdem mit, der
+  # Worker fragt ihn nur an wenn das Flag in der .env auf "true" steht.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    environment:
+      Java_Xms: "256m"
+      Java_Xmx: "1g"
+    expose:
+      - "8010"
 
   web:
     build:

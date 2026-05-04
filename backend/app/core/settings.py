@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     crawler_timeout_seconds: int = Field(default=15)
     crawler_respect_robots: bool = Field(default=True)
 
+    # Tippfehler-Check via LanguageTool (Phase 4B). Opt-in — der LT-Container
+    # ist mit ~2 GB Image/~600 MB RAM nicht ohne, deshalb default off. Wenn
+    # enabled, fragt der Worker nach dem Hauptcrawl je Page einmal die LT-API.
+    languagetool_url: str = Field(default="http://localhost:8010")
+    crawler_spellcheck_enabled: bool = Field(default=False)
+    crawler_spellcheck_max_chars: int = Field(default=8000)
+    crawler_spellcheck_min_errors: int = Field(default=5)
+    crawler_spellcheck_timeout_seconds: int = Field(default=20)
+
 
 @lru_cache
 def get_settings() -> Settings:

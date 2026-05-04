@@ -30,6 +30,7 @@ from crawler.external import check_external_links, to_status_map
 from crawler.fetcher import make_client
 from crawler.resources import probe_resources
 from crawler.sitemap import SitemapBundle, discover_and_fetch
+from crawler.spellcheck import SpellingResult, check_spelling
 
 log = structlog.get_logger(__name__)
 
@@ -75,7 +76,8 @@ def run_crawl_job(crawl_id: int) -> None:
                 external_statuses,
                 sitemap_bundle,
                 resource_statuses,
-            ) = asyncio.run(_crawl_and_probes(config, settings.crawler_max_concurrency))
+                spelling_results,
+            ) = asyncio.run(_crawl_and_probes(config, settings))
         except Exception as exc:  # noqa: BLE001
             log.exception("crawl_failed", crawl_id=crawl_id)
             crawl.status = CrawlStatus.FAILED
@@ -97,7 +99,11 @@ def run_crawl_job(crawl_id: int) -> None:
                     external_statuses=external_statuses,
                     sitemap_urls=sitemap_bundle.all_urls or None,
                 )
-                + analyze_content(crawl_result)
+                + analyze_content(
+                    crawl_result,
+                    spelling_results=spelling_results or None,
+                    spelling_min_errors=settings.crawler_spellcheck_min_errors,
+                )
             )
             _persist_findings(db, crawl_id, findings, url_to_page_id)
             _persist_scores(db, crawl, findings, len(crawl_result.html_pages()))
@@ -127,15 +133,21 @@ def run_crawl_job(crawl_id: int) -> None:
 run_crawl = run_crawl_job
 
 
-async def _crawl_and_probes(
-    config: CrawlConfig, concurrency: int
-) -> tuple[CrawlResult, dict[str, int | None], SitemapBundle, dict[str, int | None]]:
-    """Run the main crawl, then external-link probe, sitemap discovery, and
-    resource (CSS/JS/image) probe — all in the same event loop.
+async def _crawl_and_probes(config: CrawlConfig, settings) -> tuple[  # noqa: ANN001 (Settings)
+    CrawlResult,
+    dict[str, int | None],
+    SitemapBundle,
+    dict[str, int | None],
+    dict[str, SpellingResult],
+]:
+    """Run the main crawl, then external-link probe, sitemap discovery,
+    resource probe, and (optionally) the LanguageTool spell-check — all in
+    the same event loop.
 
     Each post-crawl step is best-effort: failures don't tank the whole crawl,
     the analyzer just skips findings that depend on the missing data.
     """
+    concurrency = settings.crawler_max_concurrency
     crawl_result = await _run_crawler(config)
 
     try:
@@ -169,7 +181,20 @@ async def _crawl_and_probes(
         log.warning("resource_probe_failed", error=str(exc))
         resource_statuses = {}
 
-    return crawl_result, external_statuses, bundle, resource_statuses
+    spelling_results: dict[str, SpellingResult] = {}
+    if settings.crawler_spellcheck_enabled:
+        try:
+            spelling_results = await check_spelling(
+                crawl_result,
+                languagetool_url=settings.languagetool_url,
+                max_chars=settings.crawler_spellcheck_max_chars,
+                concurrency=min(concurrency, 4),
+                timeout=float(settings.crawler_spellcheck_timeout_seconds),
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("spellcheck_failed", error=str(exc))
+
+    return crawl_result, external_statuses, bundle, resource_statuses, spelling_results
 
 
 # --- persistence helpers ---------------------------------------------------
