@@ -3,6 +3,7 @@
 We don't want the test to actually push to Redis, so we monkeypatch the queue.
 """
 
+import re
 from unittest.mock import MagicMock
 
 
@@ -30,6 +31,13 @@ def test_trigger_crawl_creates_queued_record(client, auth_headers, monkeypatch) 
     call_args = fake_queue.enqueue.call_args
     assert call_args.args[0] == "worker.jobs.crawl.run_crawl"
     assert call_args.args[1] == crawl["id"]
+    # RQ rejects job_ids with characters outside [A-Za-z0-9_-]; this assertion
+    # exists because we previously shipped "crawl:{id}" with a colon and only
+    # noticed in production. Mocked queues silently accept anything, so we
+    # have to validate the format ourselves.
+    job_id = call_args.kwargs.get("job_id")
+    assert job_id is not None
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", job_id), f"invalid RQ job_id: {job_id!r}"
 
 
 def test_trigger_crawl_for_missing_project_returns_404(client, auth_headers) -> None:

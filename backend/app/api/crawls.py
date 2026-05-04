@@ -51,7 +51,10 @@ def trigger_crawl(project_id: int, db: Session = Depends(get_db)) -> Crawl:
     db.refresh(crawl)
 
     queue = get_crawl_queue()
-    queue.enqueue("worker.jobs.crawl.run_crawl", crawl.id, job_id=f"crawl:{crawl.id}")
+    # RQ's validate_job_id only allows letters, numbers, "_" and "-" — using
+    # ":" as a separator (which we did originally) raises ValueError in
+    # current RQ versions and breaks the trigger endpoint at runtime.
+    queue.enqueue("worker.jobs.crawl.run_crawl", crawl.id, job_id=f"crawl-{crawl.id}")
 
     return crawl
 
