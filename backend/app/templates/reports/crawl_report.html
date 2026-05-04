@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>SEO-Report — {{ ctx.project.name }} (Crawl #{{ ctx.crawl.id }})</title>
+  <style>
+    /* Self-contained, print-friendly. WeasyPrint reuses this template in
+       Phase 7-B without changes. */
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #0f172a;
+      background: #f8fafc;
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+    body { padding: 24px; }
+    h1, h2, h3 { color: #0f172a; margin: 0 0 8px; }
+    h1 { font-size: 22pt; }
+    h2 { font-size: 16pt; margin-top: 32px; padding-bottom: 6px; border-bottom: 2px solid #e2e8f0; }
+    h3 { font-size: 12pt; margin-top: 18px; }
+
+    a { color: #0f172a; text-decoration: none; word-break: break-all; }
+
+    .meta { color: #475569; font-size: 10pt; }
+    .meta a { text-decoration: underline; }
+
+    /* Score cards */
+    .scores { display: flex; gap: 12px; margin: 20px 0 8px; flex-wrap: wrap; }
+    .score-card {
+      flex: 1 1 180px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .score-card .label {
+      font-size: 9pt;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    .score-card .value {
+      font-size: 26pt;
+      font-weight: 600;
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .score-good { color: #16a34a; }
+    .score-mid  { color: #d97706; }
+    .score-bad  { color: #dc2626; }
+    .score-na   { color: #94a3b8; }
+
+    /* Severity ribbon */
+    .ribbon { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 9pt;
+      font-weight: 500;
+    }
+    .badge-critical  { background: #fee2e2; color: #991b1b; }
+    .badge-important { background: #ffedd5; color: #9a3412; }
+    .badge-tip       { background: #dbeafe; color: #1e3a8a; }
+    .badge-neutral   { background: #f1f5f9; color: #334155; }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td {
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10pt;
+    }
+    th {
+      font-size: 9pt;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+      background: #f1f5f9;
+    }
+    tr:nth-child(even) td { background: #fafafa; }
+
+    .rule-block { margin-top: 14px; }
+    .rule-header { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+    .rule-header code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9pt;
+      color: #334155;
+      background: #f1f5f9;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .rule-desc { color: #475569; font-size: 10pt; }
+    .examples { margin: 6px 0 0 0; }
+    .examples li { margin: 2px 0; word-break: break-all; }
+    .more { color: #64748b; font-size: 9pt; }
+
+    .passing-pill {
+      display: inline-block;
+      margin: 2px 4px 2px 0;
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #065f46;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 8pt;
+    }
+
+    .empty {
+      padding: 12px 0;
+      color: #16a34a;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SEO-Report — {{ ctx.project.name }}</h1>
+    <p class="meta">
+      <a href="{{ ctx.project.base_url }}">{{ ctx.project.base_url }}</a><br>
+      Crawl #{{ ctx.crawl.id }} · {{ ctx.pages_count }} Seiten gecrawlt ·
+      gestartet {{ format_datetime(ctx.crawl.started_at) }}
+      {% if ctx.crawl.finished_at %}· beendet {{ format_datetime(ctx.crawl.finished_at) }}{% endif %}
+    </p>
+
+    <section class="scores">
+      <div class="score-card">
+        <div class="label">Gesamt</div>
+        <div class="value {{ score_class(ctx.crawl.score_overall) }}">
+          {{ format_score(ctx.crawl.score_overall) }}
+        </div>
+      </div>
+      {% for cat in ctx.categories %}
+      <div class="score-card">
+        <div class="label">{{ cat.label }}</div>
+        <div class="value {{ score_class(cat.score) }}">{{ format_score(cat.score) }}</div>
+      </div>
+      {% endfor %}
+    </section>
+
+    <div class="ribbon">
+      {% set total = ctx.by_severity[severity_order[0]] + ctx.by_severity[severity_order[1]] + ctx.by_severity[severity_order[2]] %}
+      <span class="badge badge-neutral">{{ total }} Findings insgesamt</span>
+      {% for sev in severity_order %}
+        {% if ctx.by_severity[sev] %}
+          <span class="badge badge-{{ sev.value }}">
+            {{ ctx.by_severity[sev] }} × {{ severity_label[sev] }}
+          </span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </header>
+
+  {% for cat in ctx.categories %}
+  <section>
+    <h2>{{ cat.label }}</h2>
+    <p class="meta">
+      Score: <strong>{{ format_score(cat.score) }}</strong> ·
+      {{ cat.total_findings }} Findings über
+      {{ cat.rules_with_findings|length }} Regel{% if cat.rules_with_findings|length != 1 %}n{% endif %}
+      {% if cat.rules_passing %}
+        · {{ cat.rules_passing|length }} Regel{% if cat.rules_passing|length != 1 %}n{% endif %} ohne Befund
+      {% endif %}
+    </p>
+
+    {% if cat.rules_with_findings %}
+      {% for rule in cat.rules_with_findings %}
+      <div class="rule-block">
+        <div class="rule-header">
+          <span class="badge badge-{{ rule.severity.value }}">{{ severity_label[rule.severity] }}</span>
+          <code>{{ rule.rule_id }}</code>
+          <span class="badge badge-neutral">{{ rule.count }}× betroffen</span>
+        </div>
+        <div class="rule-desc">{{ rule.description }}</div>
+        {% if rule.examples %}
+          <ul class="examples">
+            {% for issue in rule.examples %}
+              <li>
+                {% if issue.page and issue.page.url %}
+                  {{ issue.page.url }}
+                {% else %}
+                  <em>(projektweit)</em>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          {% if rule.count > rule.examples|length %}
+            <div class="more">
+              … und {{ rule.count - rule.examples|length }} weitere
+            </div>
+          {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Keine Findings in dieser Kategorie — alles in Ordnung.</p>
+    {% endif %}
+
+    {% if cat.rules_passing %}
+      <h3>Regeln ohne Befund</h3>
+      <div>
+        {% for rid in cat.rules_passing %}
+          <span class="passing-pill">{{ rid }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <footer style="margin-top: 32px; color: #94a3b8; font-size: 9pt; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+    Generiert vom selbst-gehosteten SEO-Tool. Score-Berechnung: gewichtete
+    Issue-Counts pro Kategorie, geclampt auf 0–100 %. Detaillierte
+    Issue-Liste und Page-Drilldown im Frontend unter dem jeweiligen Crawl.
+  </footer>
+</body>
+</html>
