@@ -16,6 +16,9 @@ from analyzers.tech_meta import (
     RULE_PAGE_FETCH_FAILED,
     RULE_PAGE_HTTP_ERROR,
     RULE_PAGE_NOINDEX,
+    RULE_RESOURCE_BROKEN,
+    RULE_RESOURCE_MIXED_CONTENT,
+    RULE_RESOURCE_UNREACHABLE,
     RULE_RESPONSE_MEDIUM,
     RULE_RESPONSE_SLOW,
     RULE_TITLE_DUPLICATE,
@@ -29,7 +32,7 @@ from analyzers.tech_meta import (
     analyze_tech_meta,
 )
 from crawler.engine import CrawledPage, CrawlResult
-from crawler.extract import ExtractedImage, ExtractedLink, PageData
+from crawler.extract import ExtractedImage, ExtractedLink, ExtractedResource, PageData
 from crawler.fetcher import FetchResult
 
 
@@ -57,6 +60,7 @@ def _make_page(
     language: str | None = "de",
     images: list[ExtractedImage] | None = None,
     links: list[ExtractedLink] | None = None,
+    resources: list[ExtractedResource] | None = None,
     meta_robots: str | None = None,
     html_size: int = 5000,
     response_ms: int = 100,
@@ -82,6 +86,7 @@ def _make_page(
         text_excerpt="",
         images=images or [],
         links=links or [],
+        resources=resources or [],
     )
     return CrawledPage(fetch=fr, page_data=pd if not fetch_error else None, depth=0)
 
@@ -262,3 +267,117 @@ def test_clean_page_no_findings() -> None:
     )
     ids = _ids(analyze_tech_meta(r))
     assert ids == [], f"unexpected findings on clean page: {ids}"
+
+
+# --- resource rules ---
+
+
+def test_resource_broken_flagged() -> None:
+    r = _result(
+        _make_page(
+            url="https://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="https://cdn.example.com/dead.css",
+                    resource_type="stylesheet",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    statuses = {"https://cdn.example.com/dead.css": 404}
+    ids = _ids(analyze_tech_meta(r, resource_statuses=statuses))
+    assert RULE_RESOURCE_BROKEN.rule_id in ids
+
+
+def test_resource_unreachable_flagged() -> None:
+    r = _result(
+        _make_page(
+            url="https://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="https://broken.test/x.js",
+                    resource_type="script",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    statuses: dict[str, int | None] = {"https://broken.test/x.js": None}
+    ids = _ids(analyze_tech_meta(r, resource_statuses=statuses))
+    assert RULE_RESOURCE_UNREACHABLE.rule_id in ids
+
+
+def test_resource_ok_no_finding() -> None:
+    r = _result(
+        _make_page(
+            url="https://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="https://cdn.example.com/main.css",
+                    resource_type="stylesheet",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    statuses = {"https://cdn.example.com/main.css": 200}
+    ids = _ids(analyze_tech_meta(r, resource_statuses=statuses))
+    assert RULE_RESOURCE_BROKEN.rule_id not in ids
+    assert RULE_RESOURCE_UNREACHABLE.rule_id not in ids
+
+
+def test_mixed_content_flagged_without_probe() -> None:
+    """Mixed content is a URL-scheme check — fires even without probe data."""
+    r = _result(
+        _make_page(
+            url="https://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="http://insecure.test/lib.js",
+                    resource_type="script",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    ids = _ids(analyze_tech_meta(r, resource_statuses=None))
+    assert RULE_RESOURCE_MIXED_CONTENT.rule_id in ids
+
+
+def test_mixed_content_not_flagged_for_http_page() -> None:
+    """An HTTP page embedding HTTP resources is fine — not mixed content."""
+    r = _result(
+        _make_page(
+            url="http://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="http://insecure.test/lib.js",
+                    resource_type="script",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    ids = _ids(analyze_tech_meta(r))
+    assert RULE_RESOURCE_MIXED_CONTENT.rule_id not in ids
+
+
+def test_resource_probe_skipped_without_statuses() -> None:
+    """When the probe didn't run, broken/unreachable rules don't fire (but
+    mixed-content still does)."""
+    r = _result(
+        _make_page(
+            url="https://example.com/",
+            resources=[
+                ExtractedResource(
+                    url="https://cdn.example.com/x.css",
+                    resource_type="stylesheet",
+                    is_internal=False,
+                )
+            ],
+        )
+    )
+    ids = _ids(analyze_tech_meta(r, resource_statuses=None))
+    assert RULE_RESOURCE_BROKEN.rule_id not in ids
+    assert RULE_RESOURCE_UNREACHABLE.rule_id not in ids

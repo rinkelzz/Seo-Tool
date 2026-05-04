@@ -9,6 +9,7 @@ from backend.app.models.keyword import Keyword, KeywordRanking
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.resource import Resource, ResourceType
 from backend.app.models.sitemap import Sitemap
 
 __all__ = [
@@ -24,5 +25,7 @@ __all__ = [
     "Link",
     "Page",
     "Project",
+    "Resource",
+    "ResourceType",
     "Sitemap",
 ]

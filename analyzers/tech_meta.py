@@ -122,6 +122,26 @@ RULE_PAGE_HTTP_ERROR = _r(
 )
 RULE_PAGE_NOINDEX = _r("meta.robots.noindex", FindingSeverity.TIP, "Page set to noindex", 0.5)
 
+# Eingebundene Ressourcen (CSS/JS/Bilder) — siehe Phase 1B-2
+RULE_RESOURCE_BROKEN = _r(
+    "tech.resource.broken",
+    FindingSeverity.IMPORTANT,
+    "Embedded resource (CSS/JS/image) returns an HTTP error",
+    1.0,
+)
+RULE_RESOURCE_UNREACHABLE = _r(
+    "tech.resource.unreachable",
+    FindingSeverity.IMPORTANT,
+    "Embedded resource cannot be reached (DNS / timeout / connection error)",
+    1.0,
+)
+RULE_RESOURCE_MIXED_CONTENT = _r(
+    "tech.resource.mixed_content",
+    FindingSeverity.IMPORTANT,
+    "HTTPS page embeds a resource over plain HTTP — browser will block it",
+    1.5,
+)
+
 
 TECH_META_RULES: list[Rule] = registry.by_category(CATEGORY)
 
@@ -135,8 +155,21 @@ class _Counts:
     descriptions: dict[str, list[str]]
 
 
-def analyze_tech_meta(crawl: CrawlResult) -> list[Finding]:
-    """Run all tech/meta rules across the crawl and return all findings."""
+def analyze_tech_meta(
+    crawl: CrawlResult,
+    *,
+    resource_statuses: dict[str, int | None] | None = None,
+) -> list[Finding]:
+    """Run all tech/meta rules across the crawl and return all findings.
+
+    Args:
+        crawl: result from ``crawler.run_crawl``.
+        resource_statuses: optional ``resource_url → status_code`` map produced
+            by ``crawler.resources.probe_resources``. ``None`` status means the
+            request couldn't complete (DNS / timeout). When omitted, the
+            broken/unreachable resource rules are skipped — mixed-content is
+            still emitted because that's a pure URL-scheme check.
+    """
     findings: list[Finding] = []
     counts = _build_counts(crawl)
 
@@ -144,6 +177,7 @@ def analyze_tech_meta(crawl: CrawlResult) -> list[Finding]:
         findings.extend(_per_page(cp))
 
     findings.extend(_duplicates(counts))
+    findings.extend(_resource_findings(crawl, resource_statuses))
     return findings
 
 
@@ -316,6 +350,62 @@ def _duplicates(counts: _Counts) -> list[Finding]:
                             "description": desc[:200],
                             "count": len(urls),
                             "other_urls": [u for u in urls if u != url][:5],
+                        },
+                    )
+                )
+    return out
+
+
+def _resource_findings(crawl: CrawlResult, statuses: dict[str, int | None] | None) -> list[Finding]:
+    """Per-page findings for embedded CSS/JS/image resources.
+
+    Mixed-content is checked from the URL alone (no probe needed). Broken
+    and unreachable findings only fire when ``statuses`` was supplied — i.e.
+    the worker actually ran the resource probe pass.
+
+    Each (page_url, resource_url) pair generates at most one finding per rule.
+    A resource referenced from many pages produces one finding per page.
+    """
+    out: list[Finding] = []
+    for cp in crawl.html_pages():
+        pd = cp.page_data
+        if pd is None or not pd.resources:
+            continue
+        page_url = cp.fetch.final_url
+        page_is_https = page_url.startswith("https://")
+
+        for resource in pd.resources:
+            if page_is_https and resource.url.startswith("http://"):
+                out.append(
+                    _finding(
+                        RULE_RESOURCE_MIXED_CONTENT,
+                        page_url,
+                        {"resource_url": resource.url, "resource_type": resource.resource_type},
+                    )
+                )
+
+            if statuses is None:
+                continue
+            if resource.url not in statuses:
+                continue
+            status = statuses[resource.url]
+            if status is None:
+                out.append(
+                    _finding(
+                        RULE_RESOURCE_UNREACHABLE,
+                        page_url,
+                        {"resource_url": resource.url, "resource_type": resource.resource_type},
+                    )
+                )
+            elif status >= 400:
+                out.append(
+                    _finding(
+                        RULE_RESOURCE_BROKEN,
+                        page_url,
+                        {
+                            "resource_url": resource.url,
+                            "resource_type": resource.resource_type,
+                            "status_code": status,
                         },
                     )
                 )

@@ -20,6 +20,7 @@ from backend.app.models import (  # noqa: F401
     Link,
     Page,
     Project,
+    Resource,
     Sitemap,
 )
 

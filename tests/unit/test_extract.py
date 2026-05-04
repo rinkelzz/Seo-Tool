@@ -150,3 +150,61 @@ def test_main_text_none_when_nothing_extractable() -> None:
     assert pd.main_text is None
     assert pd.main_word_count == 0
     assert pd.content_blocks == []
+
+
+def test_resources_collected_from_link_script_and_img() -> None:
+    body = _html("""
+        <html>
+        <head>
+            <link rel="stylesheet" href="/css/main.css">
+            <link rel="stylesheet" href="https://cdn.other.com/lib.css">
+            <link rel="alternate stylesheet" href="/css/dark.css">
+            <link rel="icon" href="/favicon.ico">
+            <script src="/js/app.js"></script>
+            <script src="https://cdn.other.com/jquery.js"></script>
+        </head>
+        <body>
+            <img src="/img/hero.png" alt="hero">
+        </body>
+        </html>
+        """)
+    pd = extract_page(url=BASE, body=body)
+    by_url = {r.url: r for r in pd.resources}
+
+    # Stylesheets (incl. alternate stylesheet), scripts, image — but not favicon
+    assert "https://example.com/css/main.css" in by_url
+    assert "https://example.com/css/dark.css" in by_url
+    assert "https://cdn.other.com/lib.css" in by_url
+    assert "https://example.com/js/app.js" in by_url
+    assert "https://cdn.other.com/jquery.js" in by_url
+    assert "https://example.com/img/hero.png" in by_url
+    assert "https://example.com/favicon.ico" not in by_url
+
+    # Types
+    assert by_url["https://example.com/css/main.css"].resource_type == "stylesheet"
+    assert by_url["https://example.com/js/app.js"].resource_type == "script"
+    assert by_url["https://example.com/img/hero.png"].resource_type == "image"
+
+    # Internal flag
+    assert by_url["https://example.com/css/main.css"].is_internal is True
+    assert by_url["https://cdn.other.com/lib.css"].is_internal is False
+
+
+def test_resources_deduplicated_within_page() -> None:
+    body = _html("""
+        <html><head>
+        <link rel="stylesheet" href="/main.css">
+        <link rel="stylesheet" href="/main.css">
+        <script src="/app.js"></script>
+        <script src="/app.js"></script>
+        </head><body></body></html>
+        """)
+    pd = extract_page(url=BASE, body=body)
+    urls = [r.url for r in pd.resources]
+    assert urls.count("https://example.com/main.css") == 1
+    assert urls.count("https://example.com/app.js") == 1
+
+
+def test_no_resources_when_page_is_empty() -> None:
+    pd = extract_page(url=BASE, body=_html("<html><body></body></html>"))
+    assert pd.resources == []
