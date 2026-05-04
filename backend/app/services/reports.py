@@ -190,6 +190,25 @@ def report_html(db: Session, project: Project, crawl: Crawl) -> str:
     return render_html(build_context(db, project, crawl))
 
 
+def render_pdf(html: str) -> bytes:
+    """Render an HTML string to PDF bytes via WeasyPrint.
+
+    Importing WeasyPrint pulls in Pango/Cairo at import time, which fails
+    on dev machines that don't have the system libs. We import lazily so
+    that ``backend.app.services.reports`` stays importable everywhere — the
+    PDF-only endpoint is the only place that actually triggers the load.
+    """
+    from weasyprint import HTML  # noqa: PLC0415 — intentional lazy import
+
+    return HTML(string=html).write_pdf()
+
+
+def report_pdf(db: Session, project: Project, crawl: Crawl) -> bytes:
+    """One-shot helper used by the PDF endpoint. Reuses the HTML template
+    rendered by :func:`report_html` and runs it through WeasyPrint."""
+    return render_pdf(report_html(db, project, crawl))
+
+
 # ---- helpers --------------------------------------------------------------
 
 

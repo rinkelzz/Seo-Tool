@@ -6,9 +6,11 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 7-A (HTML-Report) abgeschlossen.** Neuer Report-Service ([backend/app/services/reports.py](backend/app/services/reports.py)) bündelt Crawl-Daten, Severity-Counts, Issues gruppiert pro Kategorie (samt Liste der „Regeln ohne Befund") und rendert ein druckfreundliches Jinja2-Template ([backend/app/templates/reports/crawl_report.html](backend/app/templates/reports/crawl_report.html)) mit eingebettetem CSS — Score-Karten, Severity-Ribbon, gruppierte Findings mit Beispiel-URLs (capped auf 5 pro Regel). Neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/report.html`. Frontend-Route `/projects/[id]/crawls/[crawlId]/report` proxiert das HTML server-seitig (Token bleibt server-only); „Report ansehen"-Button auf der Crawl-Detail-Page. **177 grüne Tests** (war 167).
+**Phase 7-B (PDF-Export via WeasyPrint) abgeschlossen.** Reports gibt's jetzt als HTML *und* PDF — gleiche Datenpipeline, gleiches Template. Neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/report.pdf` rendert via WeasyPrint server-seitig und liefert `application/pdf`-Bytes mit `Content-Disposition: inline; filename="seo-report-<domain>-crawl-<id>.pdf"`. WeasyPrint wird **lazy importiert**, sodass der Rest des Codes auf Maschinen ohne GTK-Stack importierbar bleibt (z.B. Windows-Dev-Env oder CI ohne Pango/Cairo). Backend-Dockerfile um GTK-System-Pakete erweitert (Pango/Cairo/HarfBuzz/Cairo/GdkPixbuf + DejaVu-Fonts). Frontend-Passthrough-Route `/report.pdf` reicht Content-Type und Content-Disposition durch; „PDF herunterladen"-Button neben „Report ansehen". **181 grüne Tests** (war 177).
 
-Phase 7-B (PDF via WeasyPrint, Crawl-A-vs-B-Vergleich, CSV-Export) folgt separat.
+Phase 7-C (Crawl-A-vs-B-Vergleich, CSV-Export) folgt separat.
+
+Phase 7-A: HTML-Report-Service ([backend/app/services/reports.py](backend/app/services/reports.py)) + Jinja2-Template ([backend/app/templates/reports/crawl_report.html](backend/app/templates/reports/crawl_report.html)).
 
 Vorherige Phasen:
 - Phase 1B-2: Resource-Crawl (CSS/JS/Image-Status, Mixed-Content).
@@ -18,9 +20,9 @@ Vorherige Phasen:
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 7-B (PDF via WeasyPrint), Phase 7-C (Crawl-Vergleich, CSV-Export).
+Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 7-C (Crawl-Vergleich, CSV-Export).
 
-Nächster Schritt: **Phase 7-B (PDF-Export via WeasyPrint)**, **Phase 5 (Keyword-Tracking via GSC)** oder UI-Polish.
+Nächster Schritt: **Phase 7-C (Crawl-Vergleich + CSV-Export)**, **Phase 5 (Keyword-Tracking via GSC)** oder UI-Polish (Live-Polling, Resource-/Sitemap-Drilldown).
 
 ## Schnellstart
 
@@ -95,6 +97,7 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 3 — Web-UI (Next.js)
 - [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
 - [x] Phase 7-A — HTML-Report pro Crawl
-- [ ] Phase 7-B — PDF-Export (WeasyPrint), Crawl-Vergleich, CSV-Export
+- [x] Phase 7-B — PDF-Export (WeasyPrint)
+- [ ] Phase 7-C — Crawl-A-vs-B-Vergleich, CSV-Export
 - [ ] Phase 5 — Keyword-Tracking via Google Search Console
 - [ ] Phase 6 — Backlink-Monitoring via GSC + Bing WMT
