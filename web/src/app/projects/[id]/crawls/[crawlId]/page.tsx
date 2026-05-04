@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CompareSelect } from "@/components/CompareSelect";
 import { IssueTable } from "@/components/IssueTable";
 import { ScoreCard } from "@/components/ScoreCard";
 import { Badge } from "@/components/ui/Badge";
@@ -34,17 +35,25 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
   let crawl;
   let summary;
   let issues;
+  let allCrawls;
   try {
-    [project, crawl, summary, issues] = await Promise.all([
+    [project, crawl, summary, issues, allCrawls] = await Promise.all([
       api.getProject(projectId),
       api.getCrawl(projectId, crawlId),
       api.getCrawlSummary(projectId, crawlId),
       api.listIssues(projectId, crawlId, { severity, category, limit: 200 }),
+      api.listCrawls(projectId),
     ]);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
+
+  // Comparison candidates: every other completed crawl of this project,
+  // most recent first.
+  const compareCandidates = allCrawls.filter(
+    (c) => c.id !== crawlId && c.status === "completed",
+  );
 
   const filterHref = (overrides: { severity?: string; category?: string }): string => {
     const next = { severity, category, ...overrides };
@@ -75,7 +84,7 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
           </p>
         </div>
         {crawl.status === "completed" && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <a
               href={`/projects/${projectId}/crawls/${crawlId}/report`}
               target="_blank"
@@ -90,8 +99,21 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
               rel="noreferrer"
               className="inline-flex items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
             >
-              PDF herunterladen ↓
+              PDF ↓
             </a>
+            <a
+              href={`/projects/${projectId}/crawls/${crawlId}/issues.csv`}
+              className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+            >
+              CSV ↓
+            </a>
+            {compareCandidates.length > 0 && (
+              <CompareSelect
+                projectId={projectId}
+                crawlId={crawlId}
+                candidates={compareCandidates}
+              />
+            )}
           </div>
         )}
       </div>

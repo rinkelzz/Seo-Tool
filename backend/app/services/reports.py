@@ -209,6 +209,26 @@ def report_pdf(db: Session, project: Project, crawl: Crawl) -> bytes:
     return render_pdf(report_html(db, project, crawl))
 
 
+def render_comparison_html(ctx) -> str:  # type: ignore[no-untyped-def]
+    """Render the crawl-vs-crawl comparison template.
+
+    ``ctx`` is a ``backend.app.services.comparison.ComparisonContext`` —
+    typed via duck typing here to avoid an import cycle (comparison.py
+    already imports the labels/orders from this module).
+    """
+    template = _env.get_template("reports/crawl_comparison.html")
+    return template.render(
+        ctx=ctx,
+        severity_label=SEVERITY_LABELS,
+        severity_order=SEVERITY_ORDER,
+        format_score=_format_score,
+        format_datetime=_format_datetime,
+        format_delta=_format_delta,
+        score_class=_score_class,
+        delta_class=_delta_class,
+    )
+
+
 # ---- helpers --------------------------------------------------------------
 
 
@@ -250,3 +270,20 @@ def _score_class(score: float | None) -> str:
     if score >= 60:
         return "score-mid"
     return "score-bad"
+
+
+def _format_delta(delta: float | None) -> str:
+    """Human-readable score delta (``+5``, ``-3``, ``±0``, ``—``)."""
+    if delta is None:
+        return "—"
+    if delta == 0:
+        return "±0"
+    sign = "+" if delta > 0 else ""
+    return f"{sign}{delta:.0f}"
+
+
+def _delta_class(delta: float | None) -> str:
+    """CSS class for the delta arrow — green up, red down, neutral zero."""
+    if delta is None or delta == 0:
+        return "delta-zero"
+    return "delta-up" if delta > 0 else "delta-down"

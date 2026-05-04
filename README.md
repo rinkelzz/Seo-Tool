@@ -6,9 +6,15 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 7-B (PDF-Export via WeasyPrint) abgeschlossen.** Reports gibt's jetzt als HTML *und* PDF — gleiche Datenpipeline, gleiches Template. Neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/report.pdf` rendert via WeasyPrint server-seitig und liefert `application/pdf`-Bytes mit `Content-Disposition: inline; filename="seo-report-<domain>-crawl-<id>.pdf"`. WeasyPrint wird **lazy importiert**, sodass der Rest des Codes auf Maschinen ohne GTK-Stack importierbar bleibt (z.B. Windows-Dev-Env oder CI ohne Pango/Cairo). Backend-Dockerfile um GTK-System-Pakete erweitert (Pango/Cairo/HarfBuzz/Cairo/GdkPixbuf + DejaVu-Fonts). Frontend-Passthrough-Route `/report.pdf` reicht Content-Type und Content-Disposition durch; „PDF herunterladen"-Button neben „Report ansehen". **181 grüne Tests** (war 177).
+**Phase 7-C (Crawl-Vergleich + CSV-Export) abgeschlossen.** Reporting-Story damit komplett.
 
-Phase 7-C (Crawl-A-vs-B-Vergleich, CSV-Export) folgt separat.
+- **Crawl-vs-Crawl-Vergleich**: neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/compare/{other_id}.html`. Diff über `(rule_id, page_url)` mit drei Buckets pro Kategorie — neue Findings (in B nicht in A), behobene (in A nicht in B), persistente. Score-Deltas pro Kategorie + Overall, Reihenfolge wird automatisch chronologisch normalisiert (kleinere Crawl-ID = "vorher"). Eigenes Jinja2-Template ([crawl_comparison.html](backend/app/templates/reports/crawl_comparison.html)) mit Score-Karten, Delta-Pfeilen und farbcodierten Badges. Frontend: „Vergleichen mit…"-Dropdown auf der Crawl-Detail-Page (zeigt alle anderen completed Crawls).
+- **CSV-Export**: `GET /api/projects/{pid}/crawls/{cid}/issues.csv` streamt Findings als UTF-8-CSV mit BOM (Excel-kompatibel für Umlaute), JSON-serialisierte Payload-Spalte. Frontend: „CSV ↓"-Button. Streaming via `yield_per(500)` damit Crawls mit hunderttausenden Findings nicht den Worker sprengen.
+
+**195 grüne Tests** (war 181).
+
+Phase 7-B: PDF via WeasyPrint (Lazy-Import + GTK-System-Deps in Backend-Dockerfile).
+Phase 7-A: HTML-Report-Service ([backend/app/services/reports.py](backend/app/services/reports.py)) + Jinja2-Template.
 
 Phase 7-A: HTML-Report-Service ([backend/app/services/reports.py](backend/app/services/reports.py)) + Jinja2-Template ([backend/app/templates/reports/crawl_report.html](backend/app/templates/reports/crawl_report.html)).
 
@@ -20,9 +26,9 @@ Vorherige Phasen:
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 7-C (Crawl-Vergleich, CSV-Export).
+Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 5 (Keyword-Tracking via GSC), Phase 6 (Backlink-Monitoring), UI-Polish (Live-Polling, Resource-/Sitemap-Drilldown).
 
-Nächster Schritt: **Phase 7-C (Crawl-Vergleich + CSV-Export)**, **Phase 5 (Keyword-Tracking via GSC)** oder UI-Polish (Live-Polling, Resource-/Sitemap-Drilldown).
+Nächster Schritt: **Phase 5 (Keyword-Tracking via GSC)**, **UI-Polish** oder **Phase 4B (LanguageTool)**.
 
 ## Schnellstart
 
@@ -98,6 +104,6 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
 - [x] Phase 7-A — HTML-Report pro Crawl
 - [x] Phase 7-B — PDF-Export (WeasyPrint)
-- [ ] Phase 7-C — Crawl-A-vs-B-Vergleich, CSV-Export
+- [x] Phase 7-C — Crawl-A-vs-B-Vergleich + CSV-Export
 - [ ] Phase 5 — Keyword-Tracking via Google Search Console
 - [ ] Phase 6 — Backlink-Monitoring via GSC + Bing WMT
