@@ -1,19 +1,26 @@
-"""HTML and PDF report endpoints for a single crawl.
+"""HTML / PDF report and crawl-comparison endpoints.
 
-Both routes use the same Jinja2 template — ``report.html`` returns it
-straight to the browser (print-friendly), ``report.pdf`` runs it through
-WeasyPrint server-side and serves the resulting bytes.
+- ``report.html`` / ``report.pdf`` — single-crawl reports (Phase 7-A/B).
+- ``compare/{other_id}.html`` — diff between two crawls of the same
+  project, ordered by which is older (the smaller-id crawl is treated
+  as "before"). Same Jinja2 template engine, separate template.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from backend.app.api.auth import require_token
 from backend.app.db.base import get_db
 from backend.app.models.crawl import Crawl
 from backend.app.models.project import Project
-from backend.app.services.reports import report_html, report_pdf
+from backend.app.services.comparison import build_comparison
+from backend.app.services.csv_export import stream_issues_csv
+from backend.app.services.reports import (
+    render_comparison_html,
+    report_html,
+    report_pdf,
+)
 
 router = APIRouter(
     prefix="/api/projects/{project_id}/crawls/{crawl_id}",
@@ -59,4 +66,61 @@ def crawl_report_pdf(project_id: int, crawl_id: int, db: Session = Depends(get_d
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get(
+    "/compare/{other_id}.html",
+    response_class=HTMLResponse,
+    responses={200: {"content": {"text/html": {}}}},
+)
+def crawl_compare_html(
+    project_id: int,
+    crawl_id: int,
+    other_id: int,
+    db: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Render the diff between ``crawl_id`` and ``other_id``.
+
+    The smaller of the two ids is treated as "before" so the comparison
+    always reads chronologically (assuming crawl ids are monotonic).
+    """
+    if crawl_id == other_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot compare a crawl with itself",
+        )
+
+    project, crawl_primary = _require_project_and_crawl(project_id, crawl_id, db)
+    other = db.get(Crawl, other_id)
+    if other is None or other.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Other crawl not found in this project",
+        )
+
+    crawl_a, crawl_b = (
+        (crawl_primary, other) if crawl_primary.id < other.id else (other, crawl_primary)
+    )
+    ctx = build_comparison(db, project, crawl_a, crawl_b)
+    return HTMLResponse(
+        content=render_comparison_html(ctx),
+        media_type="text/html; charset=utf-8",
+    )
+
+
+@router.get(
+    "/issues.csv",
+    responses={200: {"content": {"text/csv": {}}}},
+)
+def crawl_issues_csv(
+    project_id: int, crawl_id: int, db: Session = Depends(get_db)
+) -> StreamingResponse:
+    """Stream all findings of one crawl as a CSV file (UTF-8 with BOM)."""
+    project, crawl = _require_project_and_crawl(project_id, crawl_id, db)
+    filename = f"seo-issues-{project.domain}-crawl-{crawl.id}.csv"
+    return StreamingResponse(
+        stream_issues_csv(db, crawl.id),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

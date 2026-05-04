@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>SEO-Vergleich — {{ ctx.project.name }} (#{{ ctx.crawl_a.id }} → #{{ ctx.crawl_b.id }})</title>
+  <style>
+    /* Identische Optik wie crawl_report.html — bewusste Duplizierung statt
+       gemeinsamer Stylesheet-Datei, damit das Template self-contained
+       bleibt (relevant für WeasyPrint/PDF und für „HTML lokal speichern"). */
+    @page { size: A4; margin: 18mm 16mm; }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #0f172a; background: #f8fafc;
+      font-size: 11pt; line-height: 1.5;
+    }
+    body { padding: 24px; }
+    h1, h2, h3 { color: #0f172a; margin: 0 0 8px; }
+    h1 { font-size: 22pt; }
+    h2 { font-size: 16pt; margin-top: 32px; padding-bottom: 6px; border-bottom: 2px solid #e2e8f0; }
+    h3 { font-size: 12pt; margin-top: 18px; }
+    a { color: #0f172a; text-decoration: none; word-break: break-all; }
+    .meta { color: #475569; font-size: 10pt; }
+
+    /* Score-Karten mit Delta */
+    .scores { display: flex; gap: 12px; margin: 20px 0 8px; flex-wrap: wrap; }
+    .score-card {
+      flex: 1 1 180px;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .score-card .label {
+      font-size: 9pt; letter-spacing: 0.04em; text-transform: uppercase; color: #64748b;
+    }
+    .score-card .row {
+      display: flex; align-items: baseline; gap: 8px; margin-top: 4px; flex-wrap: wrap;
+    }
+    .score-card .from { font-size: 14pt; font-weight: 500; color: #94a3b8; }
+    .score-card .arrow { font-size: 14pt; color: #94a3b8; }
+    .score-card .to { font-size: 22pt; font-weight: 600; }
+    .score-card .delta { font-size: 11pt; font-weight: 600; }
+    .delta-up   { color: #16a34a; }
+    .delta-down { color: #dc2626; }
+    .delta-zero { color: #94a3b8; }
+
+    .badge {
+      display: inline-block; padding: 3px 9px; border-radius: 999px;
+      font-size: 9pt; font-weight: 500;
+    }
+    .badge-critical  { background: #fee2e2; color: #991b1b; }
+    .badge-important { background: #ffedd5; color: #9a3412; }
+    .badge-tip       { background: #dbeafe; color: #1e3a8a; }
+    .badge-neutral   { background: #f1f5f9; color: #334155; }
+    .badge-new       { background: #fee2e2; color: #991b1b; }
+    .badge-resolved  { background: #dcfce7; color: #166534; }
+
+    .ribbon { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+    .bucket { margin-top: 14px; }
+    .bucket-title { font-size: 11pt; font-weight: 600; margin-bottom: 6px; }
+    .bucket-empty { padding: 8px 0; color: #16a34a; font-style: italic; font-size: 10pt; }
+
+    .finding {
+      padding: 6px 0;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10pt;
+    }
+    .finding:last-child { border-bottom: 0; }
+    .finding-meta {
+      display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;
+    }
+    .finding-meta code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 9pt; color: #334155; background: #f1f5f9;
+      padding: 1px 6px; border-radius: 4px;
+    }
+    .finding-url {
+      color: #475569; font-size: 9pt; word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+{# Macro definition first — Jinja2 doesn't support forward references. #}
+{% macro render_finding(f) %}
+<div class="finding">
+  <div class="finding-meta">
+    <span class="badge badge-{{ f.severity.value }}">{{ severity_label[f.severity] }}</span>
+    <code>{{ f.rule_id }}</code>
+  </div>
+  {% if f.page_url %}
+  <div class="finding-url">{{ f.page_url }}</div>
+  {% else %}
+  <div class="finding-url"><em>(projektweit)</em></div>
+  {% endif %}
+</div>
+{% endmacro %}
+  <header>
+    <h1>SEO-Vergleich — {{ ctx.project.name }}</h1>
+    <p class="meta">
+      <a href="{{ ctx.project.base_url }}">{{ ctx.project.base_url }}</a><br>
+      Crawl #{{ ctx.crawl_a.id }} ({{ format_datetime(ctx.crawl_a.started_at) }},
+      {{ ctx.pages_a }} Seiten)
+      → Crawl #{{ ctx.crawl_b.id }} ({{ format_datetime(ctx.crawl_b.started_at) }},
+      {{ ctx.pages_b }} Seiten)
+    </p>
+
+    <section class="scores">
+      <div class="score-card">
+        <div class="label">Gesamt</div>
+        <div class="row">
+          <span class="from">{{ format_score(ctx.overall_a) }}</span>
+          <span class="arrow">→</span>
+          <span class="to {{ score_class(ctx.overall_b) }}">{{ format_score(ctx.overall_b) }}</span>
+          <span class="delta {{ delta_class(ctx.overall_delta) }}">
+            {{ format_delta(ctx.overall_delta) }}
+          </span>
+        </div>
+      </div>
+      {% for cat in ctx.categories %}
+      <div class="score-card">
+        <div class="label">{{ cat.label }}</div>
+        <div class="row">
+          <span class="from">{{ format_score(cat.score_a) }}</span>
+          <span class="arrow">→</span>
+          <span class="to {{ score_class(cat.score_b) }}">{{ format_score(cat.score_b) }}</span>
+          <span class="delta {{ delta_class(cat.score_delta) }}">
+            {{ format_delta(cat.score_delta) }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+  </header>
+
+  {% for cat in ctx.categories %}
+  <section>
+    <h2>{{ cat.label }}</h2>
+    <p class="meta">
+      <span class="badge badge-new">{{ cat.new|length }} neu</span>
+      <span class="badge badge-resolved">{{ cat.resolved|length }} gelöst</span>
+      <span class="badge badge-neutral">{{ cat.persistent|length }} persistent</span>
+    </p>
+
+    <div class="bucket">
+      <div class="bucket-title">Neue Findings</div>
+      {% if cat.new %}
+        {% for f in cat.new %}
+          {{ render_finding(f) }}
+        {% endfor %}
+      {% else %}
+        <div class="bucket-empty">Keine neuen Findings.</div>
+      {% endif %}
+    </div>
+
+    <div class="bucket">
+      <div class="bucket-title">Behobene Findings</div>
+      {% if cat.resolved %}
+        {% for f in cat.resolved %}
+          {{ render_finding(f) }}
+        {% endfor %}
+      {% else %}
+        <div class="bucket-empty">Nichts wurde behoben — entweder war Crawl #{{ ctx.crawl_a.id }} sauber oder Probleme blieben unverändert.</div>
+      {% endif %}
+    </div>
+
+    {% if cat.persistent %}
+    <div class="bucket">
+      <div class="bucket-title">Persistent (in beiden Crawls)</div>
+      {% for f in cat.persistent[:20] %}
+        {{ render_finding(f) }}
+      {% endfor %}
+      {% if cat.persistent|length > 20 %}
+        <div class="meta" style="margin-top:6px;">… und {{ cat.persistent|length - 20 }} weitere persistente Findings</div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <footer style="margin-top: 32px; color: #94a3b8; font-size: 9pt; border-top: 1px solid #e2e8f0; padding-top: 8px;">
+    Findings werden über (Regel-ID, Seiten-URL) verglichen. Score-Delta = Crawl B – Crawl A; positive Werte = Verbesserung.
+  </footer>
+</body>
+</html>

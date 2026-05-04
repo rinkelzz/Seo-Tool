@@ -182,6 +182,12 @@ export const api = {
     requestText(`/api/projects/${projectId}/crawls/${crawlId}/report.html`),
   getCrawlReportPdf: (projectId: number, crawlId: number) =>
     requestBinary(`/api/projects/${projectId}/crawls/${crawlId}/report.pdf`),
+  getCrawlComparisonHtml: (projectId: number, crawlId: number, otherId: number) =>
+    requestText(
+      `/api/projects/${projectId}/crawls/${crawlId}/compare/${otherId}.html`,
+    ),
+  getCrawlIssuesCsv: (projectId: number, crawlId: number) =>
+    requestBinary(`/api/projects/${projectId}/crawls/${crawlId}/issues.csv`),
 };
 
 export { ApiError };
