@@ -83,6 +83,24 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+/** Fetch a non-JSON resource (HTML/PDF) and return the raw text body.
+ *
+ * Same auth + dynamic-rendering treatment as ``request<T>``. Used by the
+ * report passthrough route — keeps the API token server-only.
+ */
+async function requestText(path: string, init: RequestInit = {}): Promise<string> {
+  noStore();
+  const url = new URL(path, apiUrl());
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${apiToken()}`);
+  const res = await fetch(url, { ...init, headers, cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res.status, `${res.status} ${res.statusText}: ${text}`.trim());
+  }
+  return await res.text();
+}
+
 export const api = {
   // ---- projects ----
   listProjects: () => request<Project[]>("/api/projects"),
@@ -134,6 +152,10 @@ export const api = {
     request<PageDetail>(
       `/api/projects/${projectId}/crawls/${crawlId}/pages/${pageId}`,
     ),
+
+  // ---- reports ----
+  getCrawlReportHtml: (projectId: number, crawlId: number) =>
+    requestText(`/api/projects/${projectId}/crawls/${crawlId}/report.html`),
 };
 
 export { ApiError };

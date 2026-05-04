@@ -56,7 +56,7 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">
             <Link href={`/projects/${projectId}`} className="hover:underline">
@@ -74,6 +74,16 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
             {crawl.finished_at ? ` · fertig ${formatDate(crawl.finished_at)}` : ""}
           </p>
         </div>
+        {crawl.status === "completed" && (
+          <a
+            href={`/projects/${projectId}/crawls/${crawlId}/report`}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+          >
+            Report ansehen ↗
+          </a>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

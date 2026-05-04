@@ -6,18 +6,21 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 1B-2 (Resource-Crawl) abgeschlossen.** Damit ist Phase 1B komplett. Extractor sammelt zusätzlich `<link rel="stylesheet">`, `<script src>` (deduplikatfrei pro Page) — Bilder bleiben wie zuvor. Neuer `crawler/resources.py` probt nach dem Hauptcrawl jede distinct Resource-URL einmal (HEAD mit GET-Fallback bei 405/501, deduplikatfrei, throttled über Semaphore). Persistierung in neuer `Resource`-Tabelle (`url`, `resource_type` enum, `is_internal`, `is_mixed_content`, `status_code`). Tech-Meta-Analyzer um drei neue Regeln erweitert: `tech.resource.broken` (4xx/5xx), `tech.resource.unreachable` (DNS/Timeout) und `tech.resource.mixed_content` (HTTPS-Page → HTTP-Resource — der Browser blockt das). Mixed-Content ist ein reiner URL-Scheme-Check und feuert auch ohne Probe. **167 grüne Tests** (war 152).
+**Phase 7-A (HTML-Report) abgeschlossen.** Neuer Report-Service ([backend/app/services/reports.py](backend/app/services/reports.py)) bündelt Crawl-Daten, Severity-Counts, Issues gruppiert pro Kategorie (samt Liste der „Regeln ohne Befund") und rendert ein druckfreundliches Jinja2-Template ([backend/app/templates/reports/crawl_report.html](backend/app/templates/reports/crawl_report.html)) mit eingebettetem CSS — Score-Karten, Severity-Ribbon, gruppierte Findings mit Beispiel-URLs (capped auf 5 pro Regel). Neuer Endpoint `GET /api/projects/{pid}/crawls/{cid}/report.html`. Frontend-Route `/projects/[id]/crawls/[crawlId]/report` proxiert das HTML server-seitig (Token bleibt server-only); „Report ansehen"-Button auf der Crawl-Detail-Page. **177 grüne Tests** (war 167).
+
+Phase 7-B (PDF via WeasyPrint, Crawl-A-vs-B-Vergleich, CSV-Export) folgt separat.
 
 Vorherige Phasen:
+- Phase 1B-2: Resource-Crawl (CSS/JS/Image-Status, Mixed-Content).
 - Phase 1B-1: Sitemap-Discovery + Sitemap-Diff.
 - Phase 4A: Content-Modul (Hauptinhalt via trafilatura, Page-Duplicates exakt + MinHash, Block-Boilerplate, Keyword-im-Body, Cannibalization).
 - Phase 3: Next.js-14-Frontend + Backend-API für Crawl-Detail, Summary, Issues, Pages.
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
+Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 7-B (PDF via WeasyPrint), Phase 7-C (Crawl-Vergleich, CSV-Export).
 
-Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)**, **Phase 7 (Reports + PDF-Export)** oder UI-Polish (Resource-/Sitemap-Drilldown im Frontend).
+Nächster Schritt: **Phase 7-B (PDF-Export via WeasyPrint)**, **Phase 5 (Keyword-Tracking via GSC)** oder UI-Polish.
 
 ## Schnellstart
 
@@ -91,6 +94,7 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 2 — Struktur-Modul (Backend)
 - [x] Phase 3 — Web-UI (Next.js)
 - [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
-- [ ] Phase 4 — Keyword-Tracking via Google Search Console
-- [ ] Phase 5 — Backlink-Monitoring via GSC + Bing WMT
-- [ ] Phase 6 — Reports + Multi-Projekt-Polish
+- [x] Phase 7-A — HTML-Report pro Crawl
+- [ ] Phase 7-B — PDF-Export (WeasyPrint), Crawl-Vergleich, CSV-Export
+- [ ] Phase 5 — Keyword-Tracking via Google Search Console
+- [ ] Phase 6 — Backlink-Monitoring via GSC + Bing WMT
