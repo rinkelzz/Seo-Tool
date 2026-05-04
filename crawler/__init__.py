@@ -19,6 +19,7 @@ from crawler.extract import (
 from crawler.fetcher import FetchResult, fetch
 from crawler.resources import ResourceProbe, probe_resources
 from crawler.sitemap import SitemapBundle, SitemapResult, discover_and_fetch
+from crawler.spellcheck import SpellingMatch, SpellingResult, check_spelling
 
 __all__ = [
     "CrawlConfig",
@@ -32,7 +33,10 @@ __all__ = [
     "ResourceProbe",
     "SitemapBundle",
     "SitemapResult",
+    "SpellingMatch",
+    "SpellingResult",
     "check_external_links",
+    "check_spelling",
     "discover_and_fetch",
     "extract_page",
     "fetch",

@@ -6,6 +6,8 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
+**Phase 4B (Tippfehler-Check via LanguageTool) abgeschlossen.** Optionaler 5. Crawl-Pass — pro HTML-Seite POST an die LanguageTool-API, zurück kommen Spelling/Grammatik-Matches. Als `content.spelling.errors`-Finding (TIP) auf Seiten mit ≥ N Auffälligkeiten (Default-Schwelle 5, konfigurierbar). Default **opt-in via `CRAWLER_SPELLCHECK_ENABLED=true`** — der LT-Container kommt mit ~2 GB Image und ~600 MB RAM, deshalb hinter einem Flag versteckt. Läuft im selben asyncio-Loop wie die anderen Probes, Failure ist best-effort. **208 grüne Tests** (war 199).
+
 **Phase 8-A (UI-Polish) abgeschlossen.** Drei Quality-of-Life-Verbesserungen für die Web-UI:
 
 - **Live-Polling**: AutoRefresh-Component aktualisiert Projekt- und Crawl-Detail-Page alle 5 s automatisch, solange ein Crawl im `queued`- oder `running`-Status ist. Kein manuelles Reloaden mehr.
@@ -34,9 +36,9 @@ Vorherige Phasen:
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain), Phase 5 (Keyword-Tracking via GSC), Phase 6 (Backlink-Monitoring), Pagination/Such-Filter im Frontend.
+Noch offen: Phase 5 (Keyword-Tracking via GSC), Phase 6 (Backlink-Monitoring), Pagination/Such-Filter im Frontend.
 
-Nächster Schritt: **Phase 5 (Keyword-Tracking via GSC)** oder **Phase 4B (LanguageTool)**.
+Nächster Schritt: **Phase 5 (Keyword-Tracking via GSC)** — braucht User-seitige Google-Cloud-OAuth-Setup.
 
 ## Schnellstart
 
@@ -109,7 +111,8 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 1B-2 — Resource-Crawl (CSS/JS/Image-Status, Mixed-Content)
 - [x] Phase 2 — Struktur-Modul (Backend)
 - [x] Phase 3 — Web-UI (Next.js)
-- [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen
+- [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization)
+- [x] Phase 4B — Tippfehler-Check via LanguageTool (opt-in)
 - [x] Phase 7-A — HTML-Report pro Crawl
 - [x] Phase 7-B — PDF-Export (WeasyPrint)
 - [x] Phase 7-C — Crawl-A-vs-B-Vergleich + CSV-Export

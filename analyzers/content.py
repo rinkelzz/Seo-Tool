@@ -234,6 +234,16 @@ RULE_THIN_CONTENT = _r(
 
 THIN_CONTENT_MIN_WORDS = 100
 
+# Phase 4B — Tippfehler/Grammatik via LanguageTool. Eine einzelne Regel pro
+# Seite mit den gesammelten Top-Beispielen; Schwellwert (`min_errors`)
+# kommt von außen, weil er Konfig ist, nicht hard-coded.
+RULE_SPELLING_ERRORS = _r(
+    "content.spelling.errors",
+    FindingSeverity.TIP,
+    "Page has spelling/grammar issues flagged by LanguageTool",
+    0.5,
+)
+
 CONTENT_RULES: list[Rule] = registry.by_category(CATEGORY)
 
 
@@ -252,8 +262,24 @@ class _PageContent:
     content_blocks: list[str]
 
 
-def analyze_content(crawl: CrawlResult) -> list[Finding]:
-    """Run all content rules across the crawl and return all findings."""
+def analyze_content(
+    crawl: CrawlResult,
+    *,
+    spelling_results: dict | None = None,  # url → SpellingResult; structural
+    spelling_min_errors: int = 5,
+) -> list[Finding]:
+    """Run all content rules across the crawl and return all findings.
+
+    Args:
+        crawl: result from ``crawler.run_crawl``.
+        spelling_results: optional ``url → crawler.SpellingResult`` map. When
+            present, pages with at least ``spelling_min_errors`` matches get a
+            ``content.spelling.errors`` finding (TIP severity). When absent
+            (default), spelling rules don't fire.
+        spelling_min_errors: threshold to keep noise from one-off false
+            positives out of the report. Default 5 — generous enough that
+            a single typo or stylistic LT hint won't trigger a finding.
+    """
     pages = _collect_pages(crawl)
     findings: list[Finding] = []
 
@@ -262,6 +288,8 @@ def analyze_content(crawl: CrawlResult) -> list[Finding]:
     findings.extend(_block_repeat_findings(pages))
     findings.extend(_keyword_in_body_findings(pages))
     findings.extend(_cannibalization_findings(pages))
+    if spelling_results:
+        findings.extend(_spelling_findings(spelling_results, spelling_min_errors))
 
     return findings
 
@@ -473,6 +501,48 @@ def _cannibalization_findings(pages: list[_PageContent]) -> list[Finding]:
                         {"keyword": keyword, "competing_with": others[:5]},
                     )
                 )
+    return out
+
+
+def _spelling_findings(
+    spelling_results: dict, min_errors: int  # type: ignore[type-arg]
+) -> list[Finding]:
+    """One finding per page with ``min_errors`` or more LT matches.
+
+    Payload aggregates a top-N excerpt list and the most-frequent rule_ids
+    so the report can show what kind of issues dominate.
+    """
+    out: list[Finding] = []
+    for url, result in spelling_results.items():
+        if getattr(result, "error", None):
+            # LT call failed for this page — silently skip; the worker logs
+            # the underlying error already.
+            continue
+        matches = getattr(result, "matches", []) or []
+        if len(matches) < min_errors:
+            continue
+        rule_counts: Counter[str] = Counter(m.rule_id for m in matches)
+        examples = [
+            {
+                "rule_id": m.rule_id,
+                "message": m.message,
+                "excerpt": m.excerpt,
+                "suggestions": m.suggestions[:3],
+            }
+            for m in matches[:5]
+        ]
+        out.append(
+            _finding(
+                RULE_SPELLING_ERRORS,
+                url,
+                {
+                    "count": len(matches),
+                    "min_errors": min_errors,
+                    "top_rules": [r for r, _ in rule_counts.most_common(5)],
+                    "examples": examples,
+                },
+            )
+        )
     return out
 
 

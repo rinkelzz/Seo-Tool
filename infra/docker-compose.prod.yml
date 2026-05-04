@@ -62,6 +62,8 @@ services:
       APP_ENV: production
       APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
       APP_API_TOKEN: ${APP_API_TOKEN}
+      LANGUAGETOOL_URL: http://languagetool:8010
+      CRAWLER_SPELLCHECK_ENABLED: ${CRAWLER_SPELLCHECK_ENABLED:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -70,6 +72,20 @@ services:
       backend:
         condition: service_started
     command: python -m worker.main
+    restart: unless-stopped
+
+  # Optional Tippfehler-Service (Phase 4B). Container ist immer da, der
+  # Worker fragt ihn aber nur an, wenn CRAWLER_SPELLCHECK_ENABLED=true im
+  # Stack-Env steht. ~600 MB RAM-Verbrauch, ~2 GB Image. Wenn euch das
+  # auf dem LXC zu schwer ist: in Portainer den Service stoppen und
+  # CRAWLER_SPELLCHECK_ENABLED auf false lassen.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    environment:
+      Java_Xms: "256m"
+      Java_Xmx: "1g"
+    expose:
+      - "8010"
     restart: unless-stopped
 
   web:
