@@ -9,8 +9,15 @@ Public surface:
 
 from crawler.engine import CrawlConfig, CrawlResult, run_crawl
 from crawler.external import ExternalCheck, check_external_links, to_status_map
-from crawler.extract import ExtractedImage, ExtractedLink, PageData, extract_page
+from crawler.extract import (
+    ExtractedImage,
+    ExtractedLink,
+    ExtractedResource,
+    PageData,
+    extract_page,
+)
 from crawler.fetcher import FetchResult, fetch
+from crawler.resources import ResourceProbe, probe_resources
 from crawler.sitemap import SitemapBundle, SitemapResult, discover_and_fetch
 
 __all__ = [
@@ -19,14 +26,17 @@ __all__ = [
     "ExternalCheck",
     "ExtractedImage",
     "ExtractedLink",
+    "ExtractedResource",
     "FetchResult",
     "PageData",
+    "ResourceProbe",
     "SitemapBundle",
     "SitemapResult",
     "check_external_links",
     "discover_and_fetch",
     "extract_page",
     "fetch",
+    "probe_resources",
     "run_crawl",
     "to_status_map",
 ]

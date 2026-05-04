@@ -19,6 +19,7 @@ from backend.app.models.issue import Issue
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.resource import Resource, ResourceType
 from backend.app.models.sitemap import Sitemap
 from worker.jobs.crawl import run_crawl_job
 
@@ -384,6 +385,79 @@ def test_sitemaps_replaced_on_subsequent_crawl(db_session, engine) -> None:
     db_session.expire_all()
     sitemaps = db_session.query(Sitemap).filter(Sitemap.project_id == project_id).all()
     assert len(sitemaps) == 1, "second crawl should replace, not accumulate"
+
+
+@respx.mock
+def test_resources_persisted_with_status_and_findings(db_session, engine) -> None:
+    """A page with embedded CSS/JS should:
+    - persist Resource rows with the probed status_code
+    - emit tech.resource.broken for a 404 asset
+    - emit tech.resource.mixed_content for an HTTP asset on an HTTPS page
+    """
+    rich_body = (
+        '<link rel="stylesheet" href="https://cdn.demo6.test/main.css">'
+        '<link rel="stylesheet" href="https://cdn.demo6.test/dead.css">'
+        '<script src="http://insecure.demo6.test/legacy.js"></script>'
+    )
+    respx.get("https://demo6.test/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://demo6.test/").mock(
+        return_value=httpx.Response(
+            200,
+            html=(
+                '<html lang="de"><head><title>Eine Startseite mit ausreichend langem Titel hier</title>'
+                '<meta name="description" content="A meta description that is sufficiently long to satisfy the heuristic threshold for descriptions.">'
+                + rich_body
+                + '</head><body><h1>Heading</h1><img src="/x.png" alt="x"></body></html>'
+            ),
+            headers={"content-type": "text/html"},
+        )
+    )
+    # Resource probes
+    respx.head("https://cdn.demo6.test/main.css").mock(return_value=httpx.Response(200))
+    respx.head("https://cdn.demo6.test/dead.css").mock(return_value=httpx.Response(404))
+    respx.head("http://insecure.demo6.test/legacy.js").mock(return_value=httpx.Response(200))
+    # The image is also a resource — needs a probe
+    respx.head("https://demo6.test/x.png").mock(return_value=httpx.Response(200))
+
+    project = Project(
+        name="Demo6",
+        domain="demo6.test",
+        base_url="https://demo6.test/",
+        robots_respect=True,
+        js_render=False,
+    )
+    db_session.add(project)
+    db_session.commit()
+    crawl = Crawl(project_id=project.id, status=CrawlStatus.QUEUED)
+    db_session.add(crawl)
+    db_session.commit()
+    crawl_id = crawl.id
+
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with patch("worker.jobs.crawl.get_session_factory", return_value=SessionLocal):
+        run_crawl_job(crawl_id)
+
+    db_session.expire_all()
+    crawl_after = db_session.get(Crawl, crawl_id)
+    assert crawl_after.status == CrawlStatus.COMPLETED
+
+    resources = db_session.query(Resource).filter(Resource.crawl_id == crawl_id).all()
+    by_url = {r.url: r for r in resources}
+    assert by_url["https://cdn.demo6.test/main.css"].resource_type == ResourceType.STYLESHEET
+    assert by_url["https://cdn.demo6.test/main.css"].status_code == 200
+    assert by_url["https://cdn.demo6.test/main.css"].is_mixed_content is False
+    assert by_url["https://cdn.demo6.test/dead.css"].status_code == 404
+    assert by_url["http://insecure.demo6.test/legacy.js"].is_mixed_content is True
+    assert by_url["http://insecure.demo6.test/legacy.js"].resource_type == ResourceType.SCRIPT
+    assert by_url["https://demo6.test/x.png"].resource_type == ResourceType.IMAGE
+    assert by_url["https://demo6.test/x.png"].is_internal is True
+
+    issues = db_session.query(Issue).filter(Issue.crawl_id == crawl_id).all()
+    rule_ids = {i.rule_id for i in issues}
+    assert "tech.resource.broken" in rule_ids
+    assert "tech.resource.mixed_content" in rule_ids
 
 
 def test_run_crawl_alias_points_to_job() -> None:

@@ -22,11 +22,13 @@ from backend.app.models.issue import Issue, IssueCategory, IssueSeverity
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.resource import Resource, ResourceType
 from backend.app.models.sitemap import Sitemap
 from crawler.engine import CrawlConfig, CrawledPage, CrawlResult
 from crawler.engine import run_crawl as _run_crawler
 from crawler.external import check_external_links, to_status_map
 from crawler.fetcher import make_client
+from crawler.resources import probe_resources
 from crawler.sitemap import SitemapBundle, discover_and_fetch
 
 log = structlog.get_logger(__name__)
@@ -68,9 +70,12 @@ def run_crawl_job(crawl_id: int) -> None:
         )
 
         try:
-            crawl_result, external_statuses, sitemap_bundle = asyncio.run(
-                _crawl_check_and_sitemap(config, settings.crawler_max_concurrency)
-            )
+            (
+                crawl_result,
+                external_statuses,
+                sitemap_bundle,
+                resource_statuses,
+            ) = asyncio.run(_crawl_and_probes(config, settings.crawler_max_concurrency))
         except Exception as exc:  # noqa: BLE001
             log.exception("crawl_failed", crawl_id=crawl_id)
             crawl.status = CrawlStatus.FAILED
@@ -81,11 +86,11 @@ def run_crawl_job(crawl_id: int) -> None:
 
         try:
             url_to_page_id = _persist_pages_and_assets(
-                db, crawl_id, crawl_result, external_statuses
+                db, crawl_id, crawl_result, external_statuses, resource_statuses
             )
             _persist_sitemaps(db, project.id, sitemap_bundle)
             findings = (
-                analyze_tech_meta(crawl_result)
+                analyze_tech_meta(crawl_result, resource_statuses=resource_statuses or None)
                 + analyze_structure(
                     crawl_result,
                     base_url=project.base_url,
@@ -122,14 +127,14 @@ def run_crawl_job(crawl_id: int) -> None:
 run_crawl = run_crawl_job
 
 
-async def _crawl_check_and_sitemap(
+async def _crawl_and_probes(
     config: CrawlConfig, concurrency: int
-) -> tuple[CrawlResult, dict[str, int | None], SitemapBundle]:
-    """Run the main crawl, probe external links, and discover sitemaps.
+) -> tuple[CrawlResult, dict[str, int | None], SitemapBundle, dict[str, int | None]]:
+    """Run the main crawl, then external-link probe, sitemap discovery, and
+    resource (CSS/JS/image) probe — all in the same event loop.
 
-    Each step is best-effort: failures in the external check or sitemap
-    discovery don't tank the whole crawl — the analyzer just skips the
-    relevant findings.
+    Each post-crawl step is best-effort: failures don't tank the whole crawl,
+    the analyzer just skips findings that depend on the missing data.
     """
     crawl_result = await _run_crawler(config)
 
@@ -137,10 +142,10 @@ async def _crawl_check_and_sitemap(
         checks = await check_external_links(
             crawl_result, user_agent=config.user_agent, concurrency=concurrency
         )
-        statuses = to_status_map(checks)
+        external_statuses = to_status_map(checks)
     except Exception as exc:  # noqa: BLE001
         log.warning("external_link_check_failed", error=str(exc))
-        statuses = {}
+        external_statuses = {}
 
     try:
         async with make_client(
@@ -155,7 +160,16 @@ async def _crawl_check_and_sitemap(
         log.warning("sitemap_discovery_failed", error=str(exc))
         bundle = SitemapBundle()
 
-    return crawl_result, statuses, bundle
+    try:
+        probes = await probe_resources(
+            crawl_result, user_agent=config.user_agent, concurrency=concurrency
+        )
+        resource_statuses = {url: probe.status_code for url, probe in probes.items()}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("resource_probe_failed", error=str(exc))
+        resource_statuses = {}
+
+    return crawl_result, external_statuses, bundle, resource_statuses
 
 
 # --- persistence helpers ---------------------------------------------------
@@ -166,13 +180,19 @@ def _persist_pages_and_assets(
     crawl_id: int,
     crawl_result: CrawlResult,
     external_statuses: dict[str, int | None] | None = None,
+    resource_statuses: dict[str, int | None] | None = None,
 ) -> dict[str, int]:
-    """Insert ``Page``, ``Image``, ``Link`` rows. Returns final_url → page_id.
+    """Insert ``Page``, ``Image``, ``Link``, ``Resource``, ``ContentBlock`` rows.
+
+    Returns final_url → page_id mapping for the findings persistence step.
 
     ``external_statuses`` is the (optional) map produced by the external link
     checker; when present, link rows get their ``target_status_code`` filled in.
+    ``resource_statuses`` is the analogous map for embedded CSS/JS/image
+    assets — used to populate ``Resource.status_code``.
     """
-    statuses = external_statuses or {}
+    ext_statuses = external_statuses or {}
+    res_statuses = resource_statuses or {}
     url_to_page_id: dict[str, int] = {}
 
     for cp in crawl_result.pages:
@@ -181,40 +201,56 @@ def _persist_pages_and_assets(
         db.flush()  # need page.id for images/links
         url_to_page_id[cp.fetch.final_url] = page.id
 
-        if cp.page_data is not None:
-            for img in cp.page_data.images:
-                db.add(
-                    Image(
-                        page_id=page.id,
-                        src=img.src[:2048],
-                        alt=img.alt[:2048] if img.alt else None,
-                        has_alt=img.has_alt,
-                    )
+        if cp.page_data is None:
+            continue
+
+        page_is_https = cp.fetch.final_url.startswith("https://")
+
+        for img in cp.page_data.images:
+            db.add(
+                Image(
+                    page_id=page.id,
+                    src=img.src[:2048],
+                    alt=img.alt[:2048] if img.alt else None,
+                    has_alt=img.has_alt,
                 )
-            for link in cp.page_data.links:
-                db.add(
-                    Link(
-                        crawl_id=crawl_id,
-                        source_page_id=page.id,
-                        target_url=link.target_url[:2048],
-                        anchor_text=link.anchor_text[:2048] if link.anchor_text else None,
-                        rel=link.rel[:255] if link.rel else None,
-                        is_internal=link.is_internal,
-                        is_followed=link.is_followed,
-                        target_status_code=statuses.get(link.target_url),
-                    )
+            )
+        for link in cp.page_data.links:
+            db.add(
+                Link(
+                    crawl_id=crawl_id,
+                    source_page_id=page.id,
+                    target_url=link.target_url[:2048],
+                    anchor_text=link.anchor_text[:2048] if link.anchor_text else None,
+                    rel=link.rel[:255] if link.rel else None,
+                    is_internal=link.is_internal,
+                    is_followed=link.is_followed,
+                    target_status_code=ext_statuses.get(link.target_url),
                 )
-            for block in cp.page_data.content_blocks:
-                normalized = block.lower().strip()
-                block_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-                db.add(
-                    ContentBlock(
-                        page_id=page.id,
-                        block_hash=block_hash,
-                        text_excerpt=block[:2000],
-                        word_count=len(block.split()),
-                    )
+            )
+        for resource in cp.page_data.resources:
+            db.add(
+                Resource(
+                    crawl_id=crawl_id,
+                    source_page_id=page.id,
+                    url=resource.url[:2048],
+                    resource_type=ResourceType(resource.resource_type),
+                    is_internal=resource.is_internal,
+                    is_mixed_content=page_is_https and resource.url.startswith("http://"),
+                    status_code=res_statuses.get(resource.url),
                 )
+            )
+        for block in cp.page_data.content_blocks:
+            normalized = block.lower().strip()
+            block_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            db.add(
+                ContentBlock(
+                    page_id=page.id,
+                    block_hash=block_hash,
+                    text_excerpt=block[:2000],
+                    word_count=len(block.split()),
+                )
+            )
     db.flush()
     return url_to_page_id
 

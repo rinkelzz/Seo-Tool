@@ -6,17 +6,18 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
-**Phase 1B-1 (Sitemap-Discovery & -Diff) abgeschlossen.** Neuer `crawler/sitemap.py` liest `Sitemap:`-Direktiven aus `robots.txt` (Default `/sitemap.xml` als Fallback), folgt Sitemap-Index-Files rekursiv (depth-bounded auf 3, max 50 Sitemaps insgesamt), entgzippt `.xml.gz` transparent. Ergebnis wird als `Sitemap`-Rows pro Projekt persistiert (`urls` als JSONB-Liste, frische Crawls ersetzen ältere Snapshots). Strukturanalyzer um zwei neue Regeln erweitert: `structure.sitemap.in_sitemap_only` (URL deklariert aber nicht gecrawlt — important) und `structure.sitemap.in_crawl_only` (gecrawlt aber nicht im Sitemap — tip). **152 grüne Tests** (war 140).
+**Phase 1B-2 (Resource-Crawl) abgeschlossen.** Damit ist Phase 1B komplett. Extractor sammelt zusätzlich `<link rel="stylesheet">`, `<script src>` (deduplikatfrei pro Page) — Bilder bleiben wie zuvor. Neuer `crawler/resources.py` probt nach dem Hauptcrawl jede distinct Resource-URL einmal (HEAD mit GET-Fallback bei 405/501, deduplikatfrei, throttled über Semaphore). Persistierung in neuer `Resource`-Tabelle (`url`, `resource_type` enum, `is_internal`, `is_mixed_content`, `status_code`). Tech-Meta-Analyzer um drei neue Regeln erweitert: `tech.resource.broken` (4xx/5xx), `tech.resource.unreachable` (DNS/Timeout) und `tech.resource.mixed_content` (HTTPS-Page → HTTP-Resource — der Browser blockt das). Mixed-Content ist ein reiner URL-Scheme-Check und feuert auch ohne Probe. **167 grüne Tests** (war 152).
 
 Vorherige Phasen:
+- Phase 1B-1: Sitemap-Discovery + Sitemap-Diff.
 - Phase 4A: Content-Modul (Hauptinhalt via trafilatura, Page-Duplicates exakt + MinHash, Block-Boilerplate, Keyword-im-Body, Cannibalization).
 - Phase 3: Next.js-14-Frontend + Backend-API für Crawl-Detail, Summary, Issues, Pages.
 - Phase 2: Strukturanalyzer mit 13 Regeln + Externe-Link-Checker.
 - Phase 1A: Async-Crawler + Tech/Meta-Analyzer mit 22 Regeln.
 
-Noch offen: Phase 1B-2 (Resource-Crawl für CSS/JS), Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
+Noch offen: Phase 4B (Tippfehler via LanguageTool — separater PR wegen Java-Toolchain).
 
-Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)**, **Phase 7 (Reports + PDF-Export)** oder **Phase 1B-2**.
+Nächster Schritt: **Phase 5 (Keyword-Tracking via Google Search Console)**, **Phase 7 (Reports + PDF-Export)** oder UI-Polish (Resource-/Sitemap-Drilldown im Frontend).
 
 ## Schnellstart
 
@@ -84,8 +85,9 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 ## Phasen (Kurzfassung aus PLAN.md)
 
 - [x] Phase 0 — Grundgerüst
-- [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend); 1B-2 (Resource-Crawl CSS/JS) offen
+- [x] Phase 1A — Crawler + Tech/Meta-Modul (Backend)
 - [x] Phase 1B-1 — Sitemap-Discovery + Sitemap-Diff
+- [x] Phase 1B-2 — Resource-Crawl (CSS/JS/Image-Status, Mixed-Content)
 - [x] Phase 2 — Struktur-Modul (Backend)
 - [x] Phase 3 — Web-UI (Next.js)
 - [x] Phase 4A — Content-Modul (Hauptinhalt, Duplicates, Cannibalization); 4B (LanguageTool) offen

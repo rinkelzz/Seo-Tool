@@ -49,6 +49,19 @@ class ExtractedImage:
 
 
 @dataclass
+class ExtractedResource:
+    """An asset the browser must additionally load to render the page.
+
+    Covers ``<link rel="stylesheet" href=>``, ``<script src=>`` and
+    ``<img src=>``. Anchor links live in ``ExtractedLink``.
+    """
+
+    url: str
+    resource_type: str  # "stylesheet" | "script" | "image"
+    is_internal: bool
+
+
+@dataclass
 class PageData:
     """Everything we extract from one HTML page.
 
@@ -83,6 +96,7 @@ class PageData:
 
     images: list[ExtractedImage] = field(default_factory=list)
     links: list[ExtractedLink] = field(default_factory=list)
+    resources: list[ExtractedResource] = field(default_factory=list)
 
     @property
     def is_indexable(self) -> bool:
@@ -118,6 +132,13 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
     strong_count = len(tree.css("strong"))
     bold_count = len(tree.css("b"))
 
+    # Collect resources/images/links BEFORE _visible_text — that helper
+    # decomposes <script>/<style> nodes, which would otherwise hide
+    # <script src=…> from _collect_resources.
+    images = _collect_images(tree)
+    links = _collect_links(tree, base_url=url)
+    resources = _collect_resources(tree, images, base_url=url)
+
     body_text = _visible_text(tree)
     words = _WORD_RE.findall(body_text)
     word_count = len(words)
@@ -127,9 +148,6 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
     main_words = _WORD_RE.findall(main_text) if main_text else []
     main_word_count = len(main_words)
     content_blocks = _split_blocks(main_text) if main_text else []
-
-    images = _collect_images(tree)
-    links = _collect_links(tree, base_url=url)
 
     return PageData(
         url=url,
@@ -152,6 +170,7 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
         content_blocks=content_blocks,
         images=images,
         links=links,
+        resources=resources,
     )
 
 
@@ -267,6 +286,61 @@ def _split_blocks(main_text: str) -> list[str]:
             continue
         seen.add(block)
         out.append(block)
+    return out
+
+
+def _collect_resources(
+    tree: HTMLParser,
+    images: list[ExtractedImage],
+    *,
+    base_url: str,
+) -> list[ExtractedResource]:
+    """Collect every additional asset the browser must load.
+
+    Sources:
+    - ``<link rel="stylesheet" href=>`` (and other ``rel`` values containing
+      ``stylesheet`` like ``alternate stylesheet``)
+    - ``<script src=>``
+    - the already-collected ``ExtractedImage`` entries (they need probing
+      for status, mixed-content and broken-link findings just like CSS/JS)
+
+    Each entry is deduplicated by URL within the page (a CSS file referenced
+    twice still produces one resource row). URLs are normalised through
+    ``crawler.urls.normalize_url`` and resolved against ``base_url`` so
+    relative ``/css/main.css`` becomes ``https://site.test/css/main.css``.
+    """
+    out: list[ExtractedResource] = []
+    seen: set[tuple[str, str]] = set()  # (url, type)
+
+    def _push(raw: str | None, resource_type: str) -> None:
+        if not raw:
+            return
+        normalised = normalize_url(raw.strip(), base=base_url)
+        if normalised is None:
+            return
+        key = (normalised, resource_type)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(
+            ExtractedResource(
+                url=normalised,
+                resource_type=resource_type,
+                is_internal=is_same_site(normalised, base_url),
+            )
+        )
+
+    for link in tree.css("link[rel]"):
+        rels = (link.attributes.get("rel") or "").lower().split()
+        if "stylesheet" in rels:
+            _push(link.attributes.get("href"), "stylesheet")
+
+    for script in tree.css("script[src]"):
+        _push(script.attributes.get("src"), "script")
+
+    for img in images:
+        _push(img.src, "image")
+
     return out
 
 
