@@ -71,6 +71,28 @@ export default function NewProjectPage() {
               <Label htmlFor="js_render">JavaScript-Rendering (Phase 1B)</Label>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="schedule_interval_minutes">Crawl-Plan</Label>
+              <select
+                id="schedule_interval_minutes"
+                name="schedule_interval_minutes"
+                defaultValue=""
+                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm"
+              >
+                <option value="">Nur manuell</option>
+                <option value="60">Stündlich</option>
+                <option value="360">Alle 6 Stunden</option>
+                <option value="720">Alle 12 Stunden</option>
+                <option value="1440">Täglich</option>
+                <option value="10080">Wöchentlich</option>
+              </select>
+              <p className="text-xs text-slate-500">
+                Wenn aktiv, startet der Worker den Crawl automatisch im
+                gewählten Intervall. Erster automatischer Crawl: in einem
+                Intervall ab jetzt.
+              </p>
+            </div>
+
             {state?.error && (
               <p className="rounded-md bg-red-50 p-3 text-sm text-red-700">{state.error}</p>
             )}

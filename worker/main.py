@@ -7,6 +7,7 @@ from redis import Redis
 from rq import Queue, Worker
 
 from backend.app.core.settings import get_settings
+from worker.jobs.scheduler import schedule_initial_tick
 
 
 def _configure_logging(level: str) -> None:
@@ -29,6 +30,15 @@ def main() -> None:
 
     redis_conn = Redis.from_url(settings.redis_url)
     queues = [Queue("crawl", connection=redis_conn)]
+
+    # Kick off the recurring scheduler tick — replaces any stale tick from a
+    # previous worker run so we don't double-tick after restarts. The tick
+    # itself re-enqueues for the next interval at the end of each run.
+    try:
+        schedule_initial_tick()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("scheduler_initial_tick_failed", error=str(exc))
+
     worker = Worker(queues, connection=redis_conn)
     worker.work(with_scheduler=True)
 
