@@ -25,6 +25,24 @@ function statusTone(status: CrawlStatus): "neutral" | "success" | "critical" | "
   }
 }
 
+/** Map schedule_interval_minutes → human-readable label.
+ * Returns null when no schedule is configured. */
+function formatScheduleSummary(
+  interval: number | null,
+  nextAt: string | null,
+): string | null {
+  if (interval === null) return null;
+  let label: string;
+  if (interval === 60) label = "stündlich";
+  else if (interval === 360) label = "alle 6 Stunden";
+  else if (interval === 720) label = "alle 12 Stunden";
+  else if (interval === 1440) label = "täglich";
+  else if (interval === 10080) label = "wöchentlich";
+  else if (interval % 60 === 0) label = `alle ${interval / 60} Stunden`;
+  else label = `alle ${interval} Minuten`;
+  return nextAt ? `${label} · nächster: ${formatDate(nextAt)}` : label;
+}
+
 interface PageProps {
   params: { id: string };
 }
@@ -53,6 +71,11 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     (c) => c.status === "queued" || c.status === "running",
   );
 
+  const scheduleSummary = formatScheduleSummary(
+    project.schedule_interval_minutes,
+    project.next_scheduled_at,
+  );
+
   return (
     <div className="space-y-6">
       <AutoRefresh enabled={hasActiveCrawl} intervalMs={5000} />
@@ -64,6 +87,14 @@ export default async function ProjectDetailPage({ params }: PageProps) {
             <a href={project.base_url} className="hover:underline" target="_blank" rel="noreferrer">
               {project.base_url}
             </a>
+          </p>
+          <p className="mt-1 text-sm">
+            <span className="text-slate-500">Crawl-Plan: </span>
+            {scheduleSummary ? (
+              <Badge tone="success">{scheduleSummary}</Badge>
+            ) : (
+              <Badge tone="neutral">Nur manuell</Badge>
+            )}
           </p>
         </div>
         <form action={triggerCrawlAction}>

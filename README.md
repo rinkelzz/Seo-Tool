@@ -6,6 +6,8 @@ Siehe [PLAN.md](PLAN.md) für die Architektur und Phasenplan.
 
 ## Status
 
+**Phase 8-B (Cron-Scheduling) abgeschlossen.** Projekte können sich jetzt selbst crawlen. Beim Anlegen wählt man im Frontend einen **Crawl-Plan** (Stündlich / Alle 6 h / Alle 12 h / Täglich / Wöchentlich) oder „Nur manuell"; per `PATCH /api/projects/{id}` lässt sich das Intervall ändern oder auf `null` setzen. Neuer Worker-Tick ([worker/jobs/scheduler.py](worker/jobs/scheduler.py)) läuft alle 60 s und enqueued fällige Crawls — überspringt Projekte, die schon einen `queued`/`running`-Crawl haben (kein Doppel-Enqueue), schiebt aber `next_scheduled_at` trotzdem um den Intervall weiter (verpasste Slots stauen sich nicht auf). Tick re-enqueued sich selbst via `Queue.enqueue_in` mit stabiler `job_id`; Bootstrap im Worker-Start ersetzt stale Ticks. **218 grüne Tests** (war 208).
+
 **Phase 4B (Tippfehler-Check via LanguageTool) abgeschlossen.** Optionaler 5. Crawl-Pass — pro HTML-Seite POST an die LanguageTool-API, zurück kommen Spelling/Grammatik-Matches. Als `content.spelling.errors`-Finding (TIP) auf Seiten mit ≥ N Auffälligkeiten (Default-Schwelle 5, konfigurierbar). Default **opt-in via `CRAWLER_SPELLCHECK_ENABLED=true`** — der LT-Container kommt mit ~2 GB Image und ~600 MB RAM, deshalb hinter einem Flag versteckt. Läuft im selben asyncio-Loop wie die anderen Probes, Failure ist best-effort. **208 grüne Tests** (war 199).
 
 **Phase 8-A (UI-Polish) abgeschlossen.** Drei Quality-of-Life-Verbesserungen für die Web-UI:
@@ -117,5 +119,6 @@ Das Frontend braucht `API_URL` (Default `http://backend:8000` für docker-compos
 - [x] Phase 7-B — PDF-Export (WeasyPrint)
 - [x] Phase 7-C — Crawl-A-vs-B-Vergleich + CSV-Export
 - [x] Phase 8-A — UI-Polish (Live-Polling, Resources/Sitemap-Drilldown)
+- [x] Phase 8-B — Cron-Scheduling (periodische Auto-Crawls)
 - [ ] Phase 5 — Keyword-Tracking via Google Search Console
 - [ ] Phase 6 — Backlink-Monitoring via GSC + Bing WMT

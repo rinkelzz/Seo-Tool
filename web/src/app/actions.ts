@@ -14,9 +14,14 @@ export async function createProjectAction(
   const baseUrl = String(formData.get("base_url") ?? "").trim();
   const robotsRespect = formData.get("robots_respect") === "on";
   const jsRender = formData.get("js_render") === "on";
+  const scheduleRaw = String(formData.get("schedule_interval_minutes") ?? "").trim();
+  const scheduleInterval = scheduleRaw === "" || scheduleRaw === "0" ? null : Number(scheduleRaw);
 
   if (!name || !domain || !baseUrl) {
     return { error: "Name, Domain und Base-URL sind erforderlich." };
+  }
+  if (scheduleInterval !== null && (!Number.isFinite(scheduleInterval) || scheduleInterval < 15)) {
+    return { error: "Crawl-Plan: bitte ein Intervall von mindestens 15 Minuten wählen." };
   }
 
   let project;
@@ -27,6 +32,7 @@ export async function createProjectAction(
       base_url: baseUrl,
       robots_respect: robotsRespect,
       js_render: jsRender,
+      schedule_interval_minutes: scheduleInterval,
     });
   } catch (err) {
     if (err instanceof ApiError) {

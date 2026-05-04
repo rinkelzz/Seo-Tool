@@ -1,8 +1,9 @@
 """Project-Model: ein zu analysierendes Web-Projekt."""
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.db.base import Base, CreatedAt, PrimaryKey, UpdatedAt
@@ -24,6 +25,16 @@ class Project(Base):
     base_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     robots_respect: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     js_render: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Periodic crawls (Phase 8-B). When schedule_interval_minutes is None
+    # the project has no auto-crawls and next_scheduled_at stays null. When
+    # set, the scheduler tick enqueues a crawl every time
+    # next_scheduled_at <= now and advances it by the interval afterwards.
+    schedule_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
     created_at: Mapped[CreatedAt]
     updated_at: Mapped[UpdatedAt]
 

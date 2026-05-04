@@ -11,6 +11,8 @@ export interface Project {
   base_url: string;
   robots_respect: boolean;
   js_render: boolean;
+  schedule_interval_minutes: number | null;
+  next_scheduled_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +23,7 @@ export interface ProjectCreate {
   base_url: string;
   robots_respect?: boolean;
   js_render?: boolean;
+  schedule_interval_minutes?: number | null;
 }
 
 export interface Crawl {
