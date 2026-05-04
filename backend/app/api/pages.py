@@ -11,6 +11,7 @@ from backend.app.models.issue import Issue
 from backend.app.models.link import Link
 from backend.app.models.page import Page
 from backend.app.models.project import Project
+from backend.app.models.resource import Resource
 from backend.app.schemas.issue import IssueRead
 from backend.app.schemas.page import (
     ImageRead,
@@ -18,6 +19,7 @@ from backend.app.schemas.page import (
     PageDetail,
     PageListResponse,
     PageRead,
+    ResourceRead,
 )
 
 router = APIRouter(
@@ -82,6 +84,7 @@ def get_page(
     # Outgoing links from this page
     links = list(db.scalars(select(Link).where(Link.source_page_id == page_id)).all())
     issues = list(db.scalars(select(Issue).where(Issue.page_id == page_id)).all())
+    resources = list(db.scalars(select(Resource).where(Resource.source_page_id == page_id)).all())
 
     return PageDetail(
         **PageRead.model_validate(page).model_dump(),
@@ -90,5 +93,17 @@ def get_page(
         redirect_chain=page.redirect_chain,
         images=[ImageRead.model_validate(i) for i in page.images],
         links=[LinkRead.model_validate(link) for link in links],
+        resources=[
+            ResourceRead(
+                id=r.id,
+                url=r.url,
+                resource_type=r.resource_type.value,
+                is_internal=r.is_internal,
+                is_mixed_content=r.is_mixed_content,
+                status_code=r.status_code,
+                probe_error=r.probe_error,
+            )
+            for r in resources
+        ],
         issues=[IssueRead.model_validate(i) for i in issues],
     )

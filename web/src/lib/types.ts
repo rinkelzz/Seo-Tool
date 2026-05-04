@@ -106,13 +106,35 @@ export interface LinkRow {
   target_status_code: number | null;
 }
 
+export type ResourceType = "stylesheet" | "script" | "image";
+
+export interface ResourceRow {
+  id: number;
+  url: string;
+  resource_type: ResourceType;
+  is_internal: boolean;
+  is_mixed_content: boolean;
+  status_code: number | null;
+  probe_error: string | null;
+}
+
 export interface PageDetail extends PageRow {
   canonical_url: string | null;
   meta_robots: string | null;
   redirect_chain: string[] | null;
   images: ImageRow[];
   links: LinkRow[];
+  resources: ResourceRow[];
   issues: Issue[];
+}
+
+export interface SitemapRow {
+  id: number;
+  project_id: number;
+  url: string;
+  last_fetched_at: string | null;
+  urls_count: number;
+  fetch_error: string | null;
 }
 
 export interface PageListResponse {

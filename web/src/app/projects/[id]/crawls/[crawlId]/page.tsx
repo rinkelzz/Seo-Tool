@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AutoRefresh } from "@/components/AutoRefresh";
 import { CompareSelect } from "@/components/CompareSelect";
 import { IssueTable } from "@/components/IssueTable";
 import { ScoreCard } from "@/components/ScoreCard";
@@ -63,8 +64,11 @@ export default async function CrawlDetailPage({ params, searchParams }: PageProp
     return sp.toString() ? `?${sp.toString()}` : "";
   };
 
+  const crawlInProgress = crawl.status === "queued" || crawl.status === "running";
+
   return (
     <div className="space-y-6">
+      <AutoRefresh enabled={crawlInProgress} intervalMs={5000} />
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">

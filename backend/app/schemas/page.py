@@ -30,6 +30,20 @@ class LinkRead(BaseModel):
     target_status_code: int | None
 
 
+class ResourceRead(BaseModel):
+    """One CSS/JS/image resource linked from a page."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    url: str
+    resource_type: str  # serialized enum value (stylesheet/script/image)
+    is_internal: bool
+    is_mixed_content: bool
+    status_code: int | None
+    probe_error: str | None
+
+
 class PageRead(BaseModel):
     """Page summary row — used by the page-list endpoint."""
 
@@ -54,13 +68,14 @@ class PageRead(BaseModel):
 
 
 class PageDetail(PageRead):
-    """Page with everything attached: redirect chain, images, links, issues."""
+    """Page with everything attached: redirect chain, images, links, resources, issues."""
 
     canonical_url: str | None
     meta_robots: str | None
     redirect_chain: list[str] | None
     images: list[ImageRead]
     links: list[LinkRead]
+    resources: list[ResourceRead]
     issues: list[IssueRead]
 
 
