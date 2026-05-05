@@ -53,3 +53,34 @@ export async function triggerCrawlAction(formData: FormData): Promise<void> {
   await api.triggerCrawl(projectId);
   revalidatePath(`/projects/${projectId}`);
 }
+
+/** Updates the project's crawl schedule.
+ *
+ * ``schedule_interval_minutes`` may be a number (15+) to enable a recurring
+ * auto-crawl, or ``null`` to disable. Anything else is rejected before it
+ * reaches the backend, so the user gets a fast inline error instead of a
+ * 422 round trip.
+ */
+export async function updateProjectScheduleAction(
+  projectId: number,
+  intervalMinutes: number | null,
+): Promise<{ error?: string }> {
+  if (
+    intervalMinutes !== null &&
+    (!Number.isFinite(intervalMinutes) || intervalMinutes < 15)
+  ) {
+    return { error: "Intervall muss mindestens 15 Minuten sein." };
+  }
+  try {
+    await api.updateProject(projectId, {
+      schedule_interval_minutes: intervalMinutes,
+    });
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return { error: `Backend lehnte ab: ${err.message}` };
+    }
+    return { error: `Unerwarteter Fehler: ${(err as Error).message}` };
+  }
+  revalidatePath(`/projects/${projectId}`);
+  return {};
+}
