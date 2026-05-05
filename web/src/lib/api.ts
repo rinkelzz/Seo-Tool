@@ -132,6 +132,11 @@ export const api = {
   getProject: (id: number) => request<Project>(`/api/projects/${id}`),
   createProject: (input: ProjectCreate) =>
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(input) }),
+  updateProject: (id: number, patch: Partial<ProjectCreate>) =>
+    request<Project>(`/api/projects/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
 
   // ---- crawls ----
   listCrawls: (projectId: number) =>
