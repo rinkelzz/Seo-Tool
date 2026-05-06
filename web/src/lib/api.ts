@@ -157,6 +157,7 @@ export const api = {
       category?: IssueCategory;
       rule_id?: string;
       page_id?: number;
+      q?: string;
       limit?: number;
       offset?: number;
     } = {},
