@@ -30,6 +30,10 @@ class FetchResult:
     content_type: str | None
     body: bytes
     encoding: str | None
+    # Raw value of the ``Content-Encoding`` response header, if any
+    # (gzip / br / deflate / …). httpx auto-decodes the body but keeps the
+    # header on the Response object, so we can record it for the analyzer.
+    content_encoding: str | None = None
     redirect_chain: list[str] = field(default_factory=list)
     error: str | None = None  # set when status_code is None (network/timeout)
 
@@ -85,6 +89,7 @@ async def fetch(
         content_type=response.headers.get("content-type"),
         body=response.content,
         encoding=response.encoding,
+        content_encoding=response.headers.get("content-encoding"),
         redirect_chain=redirect_chain,
     )
 

@@ -6,8 +6,11 @@ Builds synthetic ``CrawlResult`` objects directly so we don't need real HTTP.
 from __future__ import annotations
 
 from analyzers.tech_meta import (
+    RULE_CHARSET_MISSING,
+    RULE_COMPRESSION_MISSING,
     RULE_H1_MISSING,
     RULE_H1_MULTIPLE,
+    RULE_HEADING_HIERARCHY_SKIPPED,
     RULE_HTML_TOO_LARGE,
     RULE_IMG_ALT_MISSING,
     RULE_LANG_MISSING,
@@ -36,7 +39,9 @@ from crawler.extract import ExtractedImage, ExtractedLink, ExtractedResource, Pa
 from crawler.fetcher import FetchResult
 
 
-def _ok_fetch(url: str, ms: int = 100, status: int = 200) -> FetchResult:
+def _ok_fetch(
+    url: str, ms: int = 100, status: int = 200, content_encoding: str | None = "gzip"
+) -> FetchResult:
     return FetchResult(
         url=url,
         final_url=url,
@@ -45,6 +50,7 @@ def _ok_fetch(url: str, ms: int = 100, status: int = 200) -> FetchResult:
         content_type="text/html",
         body=b"<html></html>",
         encoding="utf-8",
+        content_encoding=content_encoding,
     )
 
 
@@ -58,16 +64,19 @@ def _make_page(
     h1: str | None = "Heading",
     h1_count: int = 1,
     language: str | None = "de",
+    charset: str | None = "utf-8",
     images: list[ExtractedImage] | None = None,
     links: list[ExtractedLink] | None = None,
     resources: list[ExtractedResource] | None = None,
+    headings: dict[str, list[str]] | None = None,
     meta_robots: str | None = None,
     html_size: int = 5000,
     response_ms: int = 100,
     status: int = 200,
     fetch_error: str | None = None,
+    content_encoding: str | None = "gzip",
 ) -> CrawledPage:
-    fr = _ok_fetch(url, ms=response_ms, status=status)
+    fr = _ok_fetch(url, ms=response_ms, status=status, content_encoding=content_encoding)
     if fetch_error:
         fr.error = fetch_error
         fr.status_code = None
@@ -82,8 +91,10 @@ def _make_page(
         language=language,
         h1=h1,
         h1_count=h1_count,
+        headings=headings or {"h1": [h1] if h1 else []},
         word_count=100,
         text_excerpt="",
+        charset=charset,
         images=images or [],
         links=links or [],
         resources=resources or [],
@@ -267,6 +278,75 @@ def test_clean_page_no_findings() -> None:
     )
     ids = _ids(analyze_tech_meta(r))
     assert ids == [], f"unexpected findings on clean page: {ids}"
+
+
+# --- charset / compression / heading-hierarchy ---
+
+
+def test_charset_missing_flagged() -> None:
+    r = _result(_make_page(charset=None))
+    assert RULE_CHARSET_MISSING.rule_id in _ids(analyze_tech_meta(r))
+
+
+def test_charset_empty_flagged() -> None:
+    r = _result(_make_page(charset="   "))
+    assert RULE_CHARSET_MISSING.rule_id in _ids(analyze_tech_meta(r))
+
+
+def test_charset_present_no_finding() -> None:
+    r = _result(_make_page(charset="utf-8"))
+    assert RULE_CHARSET_MISSING.rule_id not in _ids(analyze_tech_meta(r))
+
+
+def test_compression_missing_when_header_absent() -> None:
+    r = _result(_make_page(content_encoding=None))
+    assert RULE_COMPRESSION_MISSING.rule_id in _ids(analyze_tech_meta(r))
+
+
+def test_compression_missing_for_identity_encoding() -> None:
+    """``identity`` is the standardised "no compression" value."""
+    r = _result(_make_page(content_encoding="identity"))
+    assert RULE_COMPRESSION_MISSING.rule_id in _ids(analyze_tech_meta(r))
+
+
+def test_compression_gzip_no_finding() -> None:
+    r = _result(_make_page(content_encoding="gzip"))
+    assert RULE_COMPRESSION_MISSING.rule_id not in _ids(analyze_tech_meta(r))
+
+
+def test_compression_brotli_no_finding() -> None:
+    r = _result(_make_page(content_encoding="br"))
+    assert RULE_COMPRESSION_MISSING.rule_id not in _ids(analyze_tech_meta(r))
+
+
+def test_compression_combo_header_no_finding() -> None:
+    """Some servers send ``"gzip, br"`` as a fallback list — that's fine."""
+    r = _result(_make_page(content_encoding="gzip, br"))
+    assert RULE_COMPRESSION_MISSING.rule_id not in _ids(analyze_tech_meta(r))
+
+
+def test_heading_hierarchy_skip_h1_to_h3_flagged() -> None:
+    r = _result(
+        _make_page(
+            headings={"h1": ["Top"], "h3": ["Sub-Sub"]},
+        )
+    )
+    findings = analyze_tech_meta(r)
+    skipped = [f for f in findings if f.rule_id == RULE_HEADING_HIERARCHY_SKIPPED.rule_id]
+    assert len(skipped) == 1
+    assert skipped[0].payload["before"] == "h1"
+    assert skipped[0].payload["after"] == "h3"
+    assert skipped[0].payload["skipped"] == ["h2"]
+
+
+def test_heading_hierarchy_contiguous_no_finding() -> None:
+    r = _result(_make_page(headings={"h1": ["x"], "h2": ["y"], "h3": ["z"]}))
+    assert RULE_HEADING_HIERARCHY_SKIPPED.rule_id not in _ids(analyze_tech_meta(r))
+
+
+def test_heading_hierarchy_single_level_no_finding() -> None:
+    r = _result(_make_page(headings={"h1": ["only one heading"]}))
+    assert RULE_HEADING_HIERARCHY_SKIPPED.rule_id not in _ids(analyze_tech_meta(r))
 
 
 # --- resource rules ---
