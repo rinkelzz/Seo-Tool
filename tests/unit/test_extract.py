@@ -152,6 +152,30 @@ def test_main_text_none_when_nothing_extractable() -> None:
     assert pd.content_blocks == []
 
 
+def test_charset_html5_meta() -> None:
+    body = _html('<html><head><meta charset="utf-8"></head><body></body></html>')
+    pd = extract_page(url=BASE, body=body)
+    assert pd.charset == "utf-8"
+
+
+def test_charset_legacy_http_equiv() -> None:
+    body = _html(
+        "<html><head>"
+        '<meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">'
+        "</head><body></body></html>"
+    )
+    pd = extract_page(url=BASE, body=body)
+    assert pd.charset is not None
+    # http-equiv parsing lowercases tokens
+    assert pd.charset.lower() == "iso-8859-1"
+
+
+def test_charset_absent_returns_none() -> None:
+    body = _html("<html><head></head><body></body></html>")
+    pd = extract_page(url=BASE, body=body)
+    assert pd.charset is None
+
+
 def test_resources_collected_from_link_script_and_img() -> None:
     body = _html("""
         <html>

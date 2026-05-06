@@ -87,6 +87,11 @@ class PageData:
     word_count: int = 0
     text_excerpt: str = ""
 
+    # Declared character encoding from <meta charset="…"> (HTML5) or the
+    # legacy <meta http-equiv="Content-Type"> form. ``None`` when neither
+    # is present — analyzer flags that as a tip.
+    charset: str | None = None
+
     # Main-content extraction (boilerplate stripped via trafilatura). Used by
     # the content analyzer for duplicate detection, keyword-in-body checks,
     # and TF-IDF keyword extraction.
@@ -126,6 +131,7 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
     if canonical_url:
         canonical_url = normalize_url(canonical_url, base=url) or canonical_url
     language = _detect_language(tree)
+    charset = _detect_charset(tree)
 
     headings = _collect_headings(tree)
     h1_list = headings.get("h1", [])
@@ -158,6 +164,7 @@ def extract_page(*, url: str, body: bytes, encoding: str | None = None) -> PageD
         meta_robots=meta_robots,
         canonical_url=canonical_url,
         language=language,
+        charset=charset,
         h1=h1_list[0] if h1_list else None,
         headings=headings,
         h1_count=len(h1_list),
@@ -210,6 +217,32 @@ def _detect_language(tree: HTMLParser) -> str | None:
         return None
     lang = html.attributes.get("lang")
     return lang.strip() if lang else None
+
+
+def _detect_charset(tree: HTMLParser) -> str | None:
+    """Return the declared charset, if any.
+
+    Recognises both the modern ``<meta charset="utf-8">`` form and the
+    legacy ``<meta http-equiv="Content-Type" content="text/html; charset=…">``
+    form. Modern HTML5 strongly prefers the former; the legacy variant is
+    still common in older sites.
+    """
+    # HTML5: <meta charset="...">
+    for meta in tree.css("meta[charset]"):
+        value = meta.attributes.get("charset")
+        if value and value.strip():
+            return value.strip()
+    # Legacy: <meta http-equiv="Content-Type" content="text/html; charset=...">
+    for meta in tree.css("meta[http-equiv]"):
+        equiv = (meta.attributes.get("http-equiv") or "").lower()
+        if equiv != "content-type":
+            continue
+        content = meta.attributes.get("content") or ""
+        for part in content.split(";"):
+            kv = part.strip().lower()
+            if kv.startswith("charset="):
+                return kv.split("=", 1)[1].strip() or None
+    return None
 
 
 def _collect_headings(tree: HTMLParser) -> dict[str, list[str]]:

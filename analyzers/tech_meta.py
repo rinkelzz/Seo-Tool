@@ -104,6 +104,24 @@ RULE_LANG_MISSING = _r(
 RULE_HTML_TOO_LARGE = _r(
     "tech.html.too_large", FindingSeverity.TIP, "HTML response is very large", 1.0
 )
+RULE_CHARSET_MISSING = _r(
+    "tech.charset.missing",
+    FindingSeverity.TIP,
+    "Page has no <meta charset=…> declaration",
+    0.5,
+)
+RULE_COMPRESSION_MISSING = _r(
+    "tech.compression.missing",
+    FindingSeverity.TIP,
+    "Server did not send Content-Encoding (no gzip/br/deflate)",
+    0.5,
+)
+RULE_HEADING_HIERARCHY_SKIPPED = _r(
+    "heading.hierarchy.skipped",
+    FindingSeverity.TIP,
+    "Heading levels are not contiguous (e.g. h1 followed directly by h3)",
+    0.5,
+)
 
 # URLs
 RULE_URL_TOO_LONG = _r("url.too_long", FindingSeverity.TIP, "URL is very long", 0.5)
@@ -226,6 +244,9 @@ def _per_page(cp: CrawledPage) -> list[Finding]:
     out.extend(_lang_findings(url, pd.language))
     out.extend(_html_size_findings(url, pd.html_size))
     out.extend(_robots_findings(url, pd.meta_robots))
+    out.extend(_charset_findings(url, pd.charset))
+    out.extend(_compression_findings(url, fr.content_encoding))
+    out.extend(_heading_hierarchy_findings(url, pd.headings))
 
     return out
 
@@ -297,6 +318,64 @@ def _robots_findings(url: str, robots: str | None) -> list[Finding]:
     directives = {d.strip().lower() for d in robots.split(",")}
     if "noindex" in directives or "none" in directives:
         return [_finding(RULE_PAGE_NOINDEX, url, {"directives": sorted(directives)})]
+    return []
+
+
+def _charset_findings(url: str, charset: str | None) -> list[Finding]:
+    """Modern HTML5 expects ``<meta charset="…">`` (or the legacy
+    ``http-equiv="Content-Type"`` form). Browsers fall back to UTF-8 with
+    a warning, but explicitly declaring is best practice for older clients
+    and SEO tooling."""
+    if charset and charset.strip():
+        return []
+    return [_finding(RULE_CHARSET_MISSING, url, {})]
+
+
+_COMPRESSION_VALUES = frozenset({"gzip", "br", "deflate", "zstd"})
+
+
+def _compression_findings(url: str, content_encoding: str | None) -> list[Finding]:
+    """Flag pages served without a recognised compression algorithm.
+
+    ``content_encoding`` may be a comma-separated list (e.g. ``"gzip, br"``);
+    we lowercase, split, and accept the page if any token matches a known
+    algorithm. Empty / ``identity`` / ``None`` all count as "no compression".
+    """
+    if not content_encoding:
+        return [_finding(RULE_COMPRESSION_MISSING, url, {})]
+    tokens = {t.strip().lower() for t in content_encoding.split(",") if t.strip()}
+    if tokens & _COMPRESSION_VALUES:
+        return []
+    return [
+        _finding(
+            RULE_COMPRESSION_MISSING,
+            url,
+            {"content_encoding": content_encoding},
+        )
+    ]
+
+
+def _heading_hierarchy_findings(url: str, headings: dict[str, list[str]]) -> list[Finding]:
+    """Heading levels should be contiguous: a page that jumps from h1 to h3
+    (skipping h2) hurts both accessibility and crawler structure. We look at
+    which levels are *present* and report the first skipped level we find.
+    """
+    used = sorted(int(level[1]) for level in headings if level.startswith("h"))
+    if len(used) < 2:
+        return []
+    for prev, curr in zip(used, used[1:], strict=False):
+        if curr - prev > 1:
+            return [
+                _finding(
+                    RULE_HEADING_HIERARCHY_SKIPPED,
+                    url,
+                    {
+                        "before": f"h{prev}",
+                        "after": f"h{curr}",
+                        "skipped": [f"h{lvl}" for lvl in range(prev + 1, curr)],
+                    },
+                )
+            ]
     return []
 
 
