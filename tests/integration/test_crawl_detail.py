@@ -231,6 +231,58 @@ def test_list_issues_pagination(client, auth_headers, seeded_crawl) -> None:
     assert data["limit"] == 2
 
 
+def test_list_issues_q_substring_filter(client, auth_headers, seeded_crawl) -> None:
+    """q is a case-insensitive substring match against rule_id."""
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/issues",
+        headers=auth_headers,
+        params={"q": "structure"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    rule_ids = {item["rule_id"] for item in data["items"]}
+    assert rule_ids == {"structure.depth.deep", "structure.external_link.broken"}
+
+
+def test_list_issues_q_is_case_insensitive(client, auth_headers, seeded_crawl) -> None:
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/issues",
+        headers=auth_headers,
+        params={"q": "TITLE"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["rule_id"] == "meta.title.missing"
+
+
+def test_list_issues_q_no_match_returns_empty(client, auth_headers, seeded_crawl) -> None:
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/issues",
+        headers=auth_headers,
+        params={"q": "this-does-not-match-any-rule"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 0
+    assert data["items"] == []
+
+
+def test_list_issues_q_combines_with_severity_filter(client, auth_headers, seeded_crawl) -> None:
+    """q + severity should AND together (only structure rules with important
+    severity, which is just the broken-external-link finding)."""
+    resp = client.get(
+        f"/api/projects/{seeded_crawl['project_id']}/crawls/{seeded_crawl['crawl_id']}/issues",
+        headers=auth_headers,
+        params={"q": "structure", "severity": "important"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["rule_id"] == "structure.external_link.broken"
+
+
 # --- pages list ---
 
 

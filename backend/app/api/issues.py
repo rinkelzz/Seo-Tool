@@ -34,6 +34,7 @@ def list_issues(
     category: IssueCategory | None = Query(default=None),
     rule_id: str | None = Query(default=None, max_length=128),
     page_id: int | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=128),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -49,6 +50,12 @@ def list_issues(
         base = base.where(Issue.rule_id == rule_id)
     if page_id is not None:
         base = base.where(Issue.page_id == page_id)
+    if q:
+        # Substring match on rule_id (case-insensitive). Lets the user
+        # type "duplicate" and find every duplicate-related rule across
+        # categories without having to know exact ids.
+        pattern = f"%{q.lower()}%"
+        base = base.where(func.lower(Issue.rule_id).like(pattern))
 
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
 
