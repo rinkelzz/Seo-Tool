@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.auth import require_token
 from backend.app.db.base import get_db
+from backend.app.models.crawl import Crawl, CrawlStatus
 from backend.app.models.project import Project
+from backend.app.schemas.dashboard import DashboardCrawl, DashboardProject
 from backend.app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
 
 router = APIRouter(
@@ -22,6 +24,39 @@ router = APIRouter(
 @router.get("", response_model=list[ProjectRead])
 def list_projects(db: Session = Depends(get_db)) -> list[Project]:
     return list(db.scalars(select(Project).order_by(Project.id)).all())
+
+
+@router.get("/dashboard", response_model=list[DashboardProject])
+def projects_dashboard(db: Session = Depends(get_db)) -> list[DashboardProject]:
+    """Each project plus its latest two completed crawls.
+
+    The dashboard view in the frontend uses this to render the score badge
+    (latest) and the trend arrow (delta to previous). One query per project
+    — for a single-user tool with a handful of projects this is faster to
+    write and maintain than a window-function-based single query.
+    """
+    projects = list(db.scalars(select(Project).order_by(Project.id)).all())
+    out: list[DashboardProject] = []
+    for project in projects:
+        crawls = list(
+            db.scalars(
+                select(Crawl)
+                .where(Crawl.project_id == project.id)
+                .where(Crawl.status == CrawlStatus.COMPLETED)
+                .order_by(Crawl.id.desc())
+                .limit(2)
+            ).all()
+        )
+        out.append(
+            DashboardProject(
+                project=ProjectRead.model_validate(project),
+                latest_crawl=DashboardCrawl.model_validate(crawls[0]) if crawls else None,
+                previous_crawl=(
+                    DashboardCrawl.model_validate(crawls[1]) if len(crawls) > 1 else None
+                ),
+            )
+        )
+    return out
 
 
 @router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
