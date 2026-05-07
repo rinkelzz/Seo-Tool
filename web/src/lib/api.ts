@@ -12,6 +12,7 @@ import { unstable_noStore as noStore } from "next/cache";
 import type {
   Crawl,
   CrawlSummary,
+  DashboardProject,
   IssueCategory,
   IssueListResponse,
   IssueSeverity,
@@ -129,6 +130,8 @@ async function requestBinary(
 export const api = {
   // ---- projects ----
   listProjects: () => request<Project[]>("/api/projects"),
+  getProjectsDashboard: () =>
+    request<DashboardProject[]>("/api/projects/dashboard"),
   getProject: (id: number) => request<Project>(`/api/projects/${id}`),
   createProject: (input: ProjectCreate) =>
     request<Project>("/api/projects", { method: "POST", body: JSON.stringify(input) }),

@@ -146,3 +146,20 @@ export interface PageListResponse {
   limit: number;
   offset: number;
 }
+
+export interface DashboardCrawl {
+  id: number;
+  status: CrawlStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  score_overall: number | null;
+  score_tech: number | null;
+  score_struct: number | null;
+  score_content: number | null;
+}
+
+export interface DashboardProject {
+  project: Project;
+  latest_crawl: DashboardCrawl | null;
+  previous_crawl: DashboardCrawl | null;
+}
